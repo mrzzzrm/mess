@@ -50,6 +50,7 @@ enum PieceKind {
     Rook,
     Queen,
     King,
+    Dummy,
 }
 
 impl PieceKind {
@@ -61,6 +62,7 @@ impl PieceKind {
             PieceKind::Rook => 5.0,
             PieceKind::Queen => 9.0,
             PieceKind::King => 200.0,
+            PieceKind::Dummy => 0.0
         }
     }
 }
@@ -87,12 +89,23 @@ struct Move {
     capture: Option<PieceOnBoard>,
 }
 
+impl Move {
+    fn from_to(from: Square, to: Square) -> Move {
+        Move {from, to, capture: None}
+    }
+
+    fn from_to_capture(from: Square, to: Square, capture: PieceOnBoard) -> Move {
+        Move {from, to, capture: Some(capture)}
+    }
+}
+
 type PieceOnBoard = (Piece, Square);
 
 #[derive(Debug)]
 struct Board {
     piece_list: Vec<PieceOnBoard>,
     side: Color,
+    en_passant_square: Option<Square>
 }
 
 impl Board {
@@ -103,6 +116,10 @@ impl Board {
             }
         }
         return None;
+    }
+
+    fn has_piece_at(&self, square: Square) -> bool {
+        self.piece_list.iter().position(|(_, square2)| square == *square2).is_some()
     }
 
     fn apply_move(&mut self, m: &Move) {
@@ -140,6 +157,7 @@ fn init_board() -> Board {
     Board {
         piece_list: Vec::new(),
         side: Color::White,
+        en_passant_square: None
     }
 }
 
@@ -184,32 +202,48 @@ fn generate_moves(board: &Board) -> Vec<Move> {
             continue;
         }
 
+        match piece.kind {
+            PieceKind::Pawn => {
+                let forward = match piece.color {
+                    Color::White => 1,
+                    Color::Black => -1
+                };
 
+                let home_rank = match piece.color {
+                    Color::White => 1,
+                    Color::Black => 6
+                };
 
-//        match piece.piece.kind {
-//            PieceType::BlackPawn => {
-//                moves.push(Move { from: piece.square64, to: move64(piece.square64, 0, -1), capture: None });
-//                if rank64(piece.square64) == 6 {
-//                    moves.push(Move { from: piece.square64, to: move64(piece.square64, 0, -2), capture: None });
-//                }
-//
-//                // Generate capture moves
-//                for delta_file in [-1 as i8, 1 as i8].iter() {
-//                    let target_piece = board.piece_at(move64(piece.square64, *delta_file, -1));
-//                    match target_piece {
-//                        Some(target_piece) => {
-//                            if target_piece.piece_type.color() == Color::White {
-//                                moves.push(Move { from: piece.square64, to: move64(piece.square64, *delta_file, -1), capture: Some(target_piece.piece_type) });
-//                            }
-//                        }
-//                        None => {}
-//                    }
-//                }
-//            }
-//            _ => {
-//                println!("Unexpected piece {:?}", piece);
-//            }
-//        }
+                if !board.has_piece_at(square.delta(0, forward)) && square.delta(0, forward).is_on_board() {
+                    moves.push(Move::from_to(*square, square.delta(0, forward)));
+
+                    if square.rank() == home_rank && !board.has_piece_at(square.delta(0, forward * 2)) && square.delta(0, forward * 2).is_on_board() {
+                        moves.push(Move::from_to(*square, square.delta(0, forward * 2)));
+                    }
+                }
+
+                // Generate capture moves
+                for file_delta in [-1 as i8, 1 as i8].iter() {
+                    let target_piece = board.piece_at(square.delta(*file_delta, forward));
+
+                    if target_piece.is_some() {
+                        let target_piece = target_piece.unwrap();
+                        if target_piece.color != piece.color {
+                            moves.push(Move::from_to_capture(*square, square.delta(*file_delta, forward), (target_piece, square.delta(*file_delta, forward))));
+                        }
+                    }
+
+                    if board.en_passant_square.is_some() && board.en_passant_square.unwrap() == square.delta(*file_delta, forward) {
+                        let en_passant_piece = board.piece_at(square.delta(*file_delta, 0)).unwrap();
+                        moves.push(Move::from_to_capture(*square, square.delta(*file_delta, forward), (en_passant_piece, square.delta(*file_delta, 0))));
+                    }
+                }
+
+            }
+            _ => {
+              println!("Unexpected piece {:?} at {:?}", piece, square);
+            }
+        }
     }
 
     return moves;
@@ -222,43 +256,89 @@ mod tests {
     #[test]
     fn pawn_moves() {
         let mut board = init_board();
-        board.side = Color::Black;
         board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 6));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(2, 1));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(3, 2));
+
         let expected_moves = vec!(
-            Move { from: Square::at(0, 6), to: Square::at(0, 5), capture: None },
-            Move { from: Square::at(0, 6), to: Square::at(0, 4), capture: None },
+            Move::from_to(Square::at(2, 1), Square::at(2, 2)),
+            Move::from_to(Square::at(2, 1), Square::at(2, 3)),
+            Move::from_to(Square::at(3, 2), Square::at(3, 3)),
+        );
+        assert_eq!(generate_moves(&board), expected_moves);
+
+        board.side = Color::Black;
+        let expected_moves = vec!(
+            Move::from_to(Square::at(0, 6), Square::at(0, 5)),
+            Move::from_to(Square::at(0, 6), Square::at(0, 4)),
         );
         assert_eq!(generate_moves(&board), expected_moves);
     }
 
-//    #[test]
-//    fn pawn_moves_blocked() {
-//        let mut board = init_board();
-//        board.side = Color::Black;
-//        board.pieces.push(Piece { piece_type: PieceType::BlackPawn, square64: square64(0, 6) });
-//        board.pieces.push(Piece { piece_type: PieceType::BlackPawn, square64: square64(0, 4) });
-//        board.pieces.push(Piece { piece_type: PieceType::BlackPawn, square64: square64(1, 5) });
-//        let expected_moves = vec!(
-//            Move { from: square64(0, 6), to: square64(0, 5), capture: None }
-//        );
-//        assert_eq!(generate_moves(&board), expected_moves);
-//    }
-//
-//    #[test]
-//    fn pawn_moves_capture() {
-//        let mut board = init_board();
-//        board.side = Color::Black;
-//        board.pieces.push(Piece { piece_type: PieceType::BlackPawn, square64: square64(1, 6) });
-//        board.pieces.push(Piece { piece_type: PieceType::WhitePawn, square64: square64(0, 5) });
-//        board.pieces.push(Piece { piece_type: PieceType::WhitePawn, square64: square64(2, 5) });
-//        let expected_moves = vec!(
-//            Move { from: square64(1, 6), to: square64(1, 5), capture: None },
-//            Move { from: square64(1, 6), to: square64(1, 4), capture: None },
-//            Move { from: square64(1, 6), to: square64(0, 5), capture: Some(PieceType::WhitePawn) },
-//            Move { from: square64(1, 6), to: square64(2, 5), capture: Some(PieceType::WhitePawn) }
-//        );
-//        assert_eq!(generate_moves(&board), expected_moves);
-//    }
+    #[test]
+    fn pawn_moves_blocked() {
+        let mut board = init_board();
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 6));
+        board.piece_list.push(Piece::create(PieceKind::Dummy, Color::White).at(0, 4));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(5, 3));
+        board.piece_list.push(Piece::create(PieceKind::Dummy, Color::White).at(5, 2));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(2, 1));
+        board.piece_list.push(Piece::create(PieceKind::Dummy, Color::White).at(2, 2));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(3, 1));
+        board.piece_list.push(Piece::create(PieceKind::Dummy, Color::White).at(3, 3));
+
+        let expected_moves = vec!(
+          Move::from_to(Square::at(3, 1), Square::at(3, 2))
+        );
+        assert_eq!(generate_moves(&board), expected_moves);
+
+        board.side = Color::Black;
+        let expected_moves = vec!(
+            Move::from_to(Square::at(0, 6), Square::at(0, 5))
+        );
+        assert_eq!(generate_moves(&board), expected_moves);
+    }
+
+    #[test]
+    fn pawn_moves_capture() {
+        let mut board = init_board();
+        board.side = Color::Black;
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 6));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 5));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(1, 5));
+        let expected_moves = vec!(
+            Move::from_to_capture(Square::at(0, 6), Square::at(1, 5), Piece::create(PieceKind::Pawn, Color::White).at(1, 5)),
+        );
+        assert_eq!(generate_moves(&board), expected_moves);
+    }
+
+    #[test]
+    fn pawn_moves_en_passant() {
+        let mut board = init_board();
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(1, 4));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(2, 4));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(4, 3));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(5, 3));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(7, 3));
+
+        board.en_passant_square = Some(Square::at(2, 5));
+        let expected_moves = vec!(
+            Move::from_to(Square::at(1, 4), Square::at(1, 5)),
+            Move::from_to_capture(Square::at(1, 4), Square::at(2, 5), Piece::create(PieceKind::Pawn, Color::Black).at(2, 4)),
+            Move::from_to(Square::at(5, 3), Square::at(5, 4))
+        );
+        assert_eq!(generate_moves(&board), expected_moves);
+
+        board.side = Color::Black;
+        board.en_passant_square = Some(Square::at(5, 2));
+        let expected_moves = vec!(
+            Move::from_to(Square::at(2, 4), Square::at(2, 3)),
+            Move::from_to(Square::at(4, 3), Square::at(4, 2)),
+            Move::from_to_capture(Square::at(4, 3), Square::at(5, 2), Piece::create(PieceKind::Pawn, Color::White).at(5, 3)),
+            Move::from_to(Square::at(7, 3), Square::at(7, 2)),
+        );
+        assert_eq!(generate_moves(&board), expected_moves);
+    }
 }
 
 fn main() {
