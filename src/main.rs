@@ -40,6 +40,12 @@ impl Color {
             Color::White => Color::Black
         }
     }
+    fn token(&self) -> char {
+        match self {
+            Color::Black => 'W',
+            Color::White => 'B'
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -63,6 +69,18 @@ impl PieceKind {
             PieceKind::Queen => 9.0,
             PieceKind::King => 200.0,
             PieceKind::Dummy => 0.0
+        }
+    }
+
+    fn token(&self) -> char {
+        match self {
+            PieceKind::Pawn => 'p',
+            PieceKind::Knight => 'n',
+            PieceKind::Bishop => 'b',
+            PieceKind::Rook => 'r',
+            PieceKind::Queen => 'q',
+            PieceKind::King => 'k',
+            PieceKind::Dummy => 'd'
         }
     }
 }
@@ -150,6 +168,33 @@ impl Board {
         }
 
         self.side = self.side.switch();
+    }
+
+    fn print(&self) {
+        print!("  ",);
+        for file in 0..8 {
+            print!("{} ", file);
+        }
+        println!();
+
+        for rank in 0..8 {
+            print!("{} ", rank);
+            for file in 0..8 {
+                let piece = self.piece_at(Square::at(file, rank));
+
+                let mut token = match piece {
+                    Some(piece) => piece.kind.token(),
+                    None => '.'
+                };
+
+                if piece.is_some() && piece.unwrap().color == Color::White {
+                    token = token.to_uppercase().to_string().chars().nth(0).unwrap();
+                }
+
+                print!("{} ", token.to_string());
+            }
+            println!();
+        }
     }
 }
 
@@ -356,6 +401,8 @@ fn main() {
     board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 6));
     board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(1, 5));
     println!("Board {:?}", board);
+
+    board.print();
 
     let moves = generate_moves(&board);
     println!("Moves {:?}", moves);
