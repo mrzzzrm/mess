@@ -1,0 +1,1 @@
+* How do I iterate over Vec<(A, B)> while manipulating A or B? I want to use the `for (a,b) in V.iter_mut()` syntax.  `for &mut (a,b) in V.iter_mut()` does not seem to work. Using `for t in V.iter_mut() { t.1 = ...; }` for now. 

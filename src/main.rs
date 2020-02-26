@@ -1,3 +1,7 @@
+extern crate num_traits;
+
+use num_traits::Float;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Square {
     x: i8,
@@ -44,6 +48,12 @@ impl Color {
         match self {
             Color::Black => 'W',
             Color::White => 'B'
+        }
+    }
+    fn evaluation_sign(&self) -> f32 {
+        match self {
+            Color::Black => -1.0_f32,
+            Color::White => 1.0_f32
         }
     }
 }
@@ -96,11 +106,15 @@ impl Piece {
         return Piece { kind, color };
     }
     fn at(&self, file: i8, rank: i8) -> PieceOnBoard {
-        return ( *self, Square { x: file, y: rank } );
+        return (*self, Square { x: file, y: rank });
+    }
+
+    fn value(&self) -> f32 {
+        self.kind.value() * self.color.evaluation_sign()
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 struct Move {
     from: Square,
     to: Square,
@@ -109,21 +123,21 @@ struct Move {
 
 impl Move {
     fn from_to(from: Square, to: Square) -> Move {
-        Move {from, to, capture: None}
+        Move { from, to, capture: None }
     }
 
     fn from_to_capture(from: Square, to: Square, capture: PieceOnBoard) -> Move {
-        Move {from, to, capture: Some(capture)}
+        Move { from, to, capture: Some(capture) }
     }
 }
 
 type PieceOnBoard = (Piece, Square);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Board {
     piece_list: Vec<PieceOnBoard>,
     side: Color,
-    en_passant_square: Option<Square>
+    en_passant_square: Option<Square>,
 }
 
 impl Board {
@@ -140,25 +154,30 @@ impl Board {
         self.piece_list.iter().position(|(_, square2)| square == *square2).is_some()
     }
 
-    fn apply_move(&mut self, m: &Move) {
+    fn apply_move(&mut self, m: Move) {
+        self.side = self.side.switch();
+
         if m.capture.is_some() {
             let pos = self.piece_list.iter().position(|&x| x.1 == m.to).unwrap();
             self.piece_list.remove(pos);
         }
 
-        for (piece, mut square) in self.piece_list.iter_mut() {
-            if square == m.from {
-                square = m.to;
+        for t in self.piece_list.iter_mut() {
+            if t.1 == m.from {
+                t.1 = m.to;
+                return;
             }
         }
 
-        self.side = self.side.switch();
+        panic!("{:?} not found", m.from);
     }
 
-    fn revert_move(&mut self, m: &Move) {
-        for (piece, mut square) in self.piece_list.iter_mut() {
-            if square == m.to {
-                square = m.from;
+    fn revert_move(&mut self, m: Move) {
+        self.side = self.side.switch();
+
+        for t in self.piece_list.iter_mut() {
+            if t.1 == m.to {
+                t.1 = m.from;
             }
         }
 
@@ -166,12 +185,14 @@ impl Board {
             let capture = m.capture.unwrap();
             self.piece_list.push(capture);
         }
+    }
 
-        self.side = self.side.switch();
+    fn is_game_over(&self) -> bool {
+        generate_moves(self).is_empty()
     }
 
     fn print(&self) {
-        print!("  ",);
+        print!("  ", );
         for file in 0..8 {
             print!("{} ", file);
         }
@@ -202,14 +223,14 @@ fn init_board() -> Board {
     Board {
         piece_list: Vec::new(),
         side: Color::White,
-        en_passant_square: None
+        en_passant_square: None,
     }
 }
 
 fn static_evaluation(board: &Board) -> f32 {
     let mut evaluation = 0.0;
     for (piece, _) in board.piece_list.iter() {
-        evaluation += piece.kind.value();
+        evaluation += piece.value();
     }
     return evaluation;
 }
@@ -221,15 +242,17 @@ fn minimax(board: &mut Board, depth: u32, neg: f32) -> f32 {
 
     let moves = generate_moves(&board);
     if moves.is_empty() {
-        return 0.0;
+        return static_evaluation(&board);
     }
 
     let mut best_move_evaluation = None;
 
     for m in moves.iter() {
-        board.apply_move(m);
+        board.apply_move(*m);
+
         let evaluation = minimax(board, depth - 1, neg * -1.0) * neg;
-        board.revert_move(m);
+
+        board.revert_move(*m);
 
         if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
             best_move_evaluation = Some(evaluation);
@@ -237,6 +260,14 @@ fn minimax(board: &mut Board, depth: u32, neg: f32) -> f32 {
     }
 
     return best_move_evaluation.unwrap() * neg;
+}
+
+fn dynamic_evaluation(board: &mut Board, depth: u32) -> f32 {
+    let neg = match board.side {
+        Color::White => 1.0,
+        Color::Black => -1.0
+    };
+    minimax(board, depth, neg) * neg
 }
 
 fn generate_moves(board: &Board) -> Vec<Move> {
@@ -283,10 +314,9 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                         moves.push(Move::from_to_capture(*square, square.delta(*file_delta, forward), (en_passant_piece, square.delta(*file_delta, 0))));
                     }
                 }
-
             }
             _ => {
-              println!("Unexpected piece {:?} at {:?}", piece, square);
+                println!("Unexpected piece {:?} at {:?}", piece, square);
             }
         }
     }
@@ -333,7 +363,7 @@ mod tests {
         board.piece_list.push(Piece::create(PieceKind::Dummy, Color::White).at(3, 3));
 
         let expected_moves = vec!(
-          Move::from_to(Square::at(3, 1), Square::at(3, 2))
+            Move::from_to(Square::at(3, 1), Square::at(3, 2))
         );
         assert_eq!(generate_moves(&board), expected_moves);
 
@@ -384,31 +414,188 @@ mod tests {
         );
         assert_eq!(generate_moves(&board), expected_moves);
     }
+
+    #[test]
+    fn board_apply_and_revert_move() {
+        let mut board = init_board();
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        let move_ = Move::from_to(Square::at(0, 1), Square::at(0, 2));
+
+        // Apply the move
+        board.apply_move(move_);
+
+        let mut expected_board = init_board();
+        expected_board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 2));
+        assert_eq!(board, expected_board);
+
+        // Revert the move
+        board.revert_move(move_);
+
+        let mut expected_board = init_board();
+        expected_board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        assert_eq!(board, expected_board);
+    }
+
+    #[test]
+    fn board_apply_and_revert_move_with_capture() {
+        let mut board = init_board();
+        let move_ = Move::from_to_capture(Square::at(0, 1), Square::at(1, 2), Piece::create(PieceKind::Pawn, Color::Black).at(1, 2));
+
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 2));
+
+        // Apply the move
+        board.apply_move(move_);
+
+        let mut expected_board = init_board();
+        expected_board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(1, 2));
+
+        assert_eq!(board, expected_board);
+
+        // Revert the move
+        board.revert_move(move_);
+
+        let mut expected_board = init_board();
+        expected_board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        expected_board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 2));
+
+        assert_eq!(board, expected_board);
+    }
+
+    #[test]
+    fn static_evaluation_basic() {
+        let mut board = init_board();
+
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        assert_eq!(static_evaluation(&board), 1.0);
+
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 2));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 3));
+        assert_eq!(static_evaluation(&board), -1.0);
+    }
+
+    #[test]
+    fn minimax_basic() {
+        // Just a white pawmn
+        let mut board = init_board();
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        assert_eq!(minimax(&mut board, 3, 1.0), 1.0);
+
+        // Just a black pawn
+        let mut board = init_board();
+        board.side = Color::Black;
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 6));
+        assert_eq!(minimax(&mut board, 3, -1.0), -1.0);
+
+        // A white pawn that can capture a black pawn
+        let mut board = init_board();
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 2));
+        assert_eq!(minimax(&mut board, 3, 1.0), 1.0);
+
+        // A black pawn that can capture a white pawn
+        let mut board = init_board();
+        board.side = Color::Black;
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 2));
+        assert_eq!(minimax(&mut board, 3, -1.0), -1.0);
+
+        // A white pawn that can capture a black pawn and another black pawn
+        let mut board = init_board();
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 1));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 2));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(3, 2));
+        assert_eq!(minimax(&mut board, 3, 1.0), 0.0);
+
+        // A white pawn that will be capture by a black pawn after it moves
+        let mut board = init_board();
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 4));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 6));
+        assert_eq!(minimax(&mut board, 3, 1.0), -1.0);
+
+        // A white pawn that will capture a black pawn after the black pawn moves
+        let mut board = init_board();
+        board.side = Color::Black;
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 3));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 5));
+        assert_eq!(minimax(&mut board, 3, -1.0), 1.0);
+
+        // A white pawn that will be captured by a black pawn after a couple of moves
+        let mut board = init_board();
+        board.side = Color::Black;
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 2));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 5));
+        assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
+
+        // ...
+        let mut board = init_board();
+        board.side = Color::Black;
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 3));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(1, 5));
+        board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 6));
+        assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
+    }
+}
+
+fn play(board: &mut Board) {
+    let mut num_moves = 0;
+
+    let max_depth = 10;
+
+    loop {
+        let d = dynamic_evaluation(board, max_depth);
+        println!("{:?}'s turn, static evaluation is {}, dynamic evaluation is {}", board.side, static_evaluation(&board), d);
+        board.print();
+
+        if board.is_game_over() {
+            println!("Game is over");
+            break;
+        }
+
+        let moves = generate_moves(board);
+        println!("{} moves to choose from", moves.len());
+
+        let mut best_move = Option::None;
+        let mut best_move_evaluation = Float::min_value();
+
+        let neg = match board.side {
+            Color::White => 1.0,
+            Color::Black => -1.0
+        };
+
+        for move_ in moves {
+            board.apply_move(move_);
+            let evaluation = minimax(board, max_depth, neg * -1.0) * neg;
+            board.revert_move(move_);
+
+            println!("Evaluating {:?} with {}", move_, evaluation * neg);
+            if evaluation > best_move_evaluation {
+                best_move = Some(move_);
+                best_move_evaluation = evaluation;
+            }
+        }
+
+        println!("Chose move {:?} with an evaluation of {}", best_move.unwrap(), best_move_evaluation * neg);
+
+        board.apply_move(best_move.unwrap());
+
+        num_moves += 1;
+        if num_moves > 50 {
+            println!("Too many moves, aborting game");
+            break;
+        }
+
+        println!();
+    }
 }
 
 fn main() {
-    let v = vec!((1, 2), (5, 3));
-
-    for (a, b) in v {
-        println!("{:?}, {:?}", a, b);
-    }
-
-
-    println!("Hello, world!");
     let mut board = init_board();
-    board.side = Color::Black;
 
     board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(0, 6));
-    board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(1, 5));
-    println!("Board {:?}", board);
+    board.piece_list.push(Piece::create(PieceKind::Pawn, Color::Black).at(1, 5));
+    board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(2, 4));
+    board.piece_list.push(Piece::create(PieceKind::Pawn, Color::White).at(0, 3));
 
-    board.print();
-
-    let moves = generate_moves(&board);
-    println!("Moves {:?}", moves);
-
-    let s_evaluation = static_evaluation(&board);
-    println!("Evaluation {:?}", s_evaluation);
-    let d_evaluation = minimax(&mut board, 1, -1.0);
-    println!("Evaluation {:?}", d_evaluation);
+    play(&mut board);
 }
