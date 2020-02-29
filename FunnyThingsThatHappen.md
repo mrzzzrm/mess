@@ -1,0 +1,1 @@
+* Mess while not hurry to capture, as long as there is no prioritization of moves that capture soon over moves that capture eventually, see rook vs pawn.
