@@ -136,29 +136,35 @@ struct Move {
     from: Square,
     to: Square,
     capture: Option<PieceOnBoard>,
+    en_passant_before: Option<Square>,
+    en_passant_after: Option<Square>,
     is_castling: bool,
     promotion: Option<PieceKind>,
 }
 
 impl Move {
     fn castling(from: Square, to: Square) -> Move {
-        Move { from, to, capture: None, is_castling: true, promotion: None }
+        Move { from, to, capture: None, en_passant_before: None, en_passant_after: None, is_castling: true, promotion: None }
     }
 
     fn promotion(from: Square, to: Square, promotion: PieceKind) -> Move {
-        Move { from, to, capture: None, is_castling: false, promotion: Some(promotion) }
+        Move { from, to, capture: None, en_passant_before: None, en_passant_after: None, is_castling: false, promotion: Some(promotion) }
     }
 
     fn promotion_capture(from: Square, to: Square, capture: PieceOnBoard, promotion: PieceKind) -> Move {
-        Move { from, to, capture: Some(capture), is_castling: false, promotion: Some(promotion) }
+        Move { from, to, capture: Some(capture), en_passant_before: None, en_passant_after: None, is_castling: false, promotion: Some(promotion) }
     }
 
     fn from_to(from: Square, to: Square) -> Move {
-        Move { from, to, capture: None, is_castling: false, promotion: None }
+        Move { from, to, capture: None, en_passant_before: None, en_passant_after: None, is_castling: false, promotion: None }
+    }
+
+    fn from_to_en_passant(from: Square, to: Square, en_passant: Square) -> Move {
+        Move { from, to, capture: None, en_passant_before: None, en_passant_after: Some(en_passant), is_castling: false, promotion: None }
     }
 
     fn from_to_capture(from: Square, to: Square, capture: PieceOnBoard) -> Move {
-        Move { from, to, capture: Some(capture), is_castling: false, promotion: None }
+        Move { from, to, capture: Some(capture), en_passant_before: None, en_passant_after: None, is_castling: false, promotion: None }
     }
 }
 
@@ -168,7 +174,7 @@ type PieceOnBoard = (Piece, Square);
 struct Board {
     piece_list: Vec<PieceOnBoard>,
     side: Color,
-    en_passant_square: Option<Square>,
+    en_passant: Option<Square>,
     castle_rights: [bool; 2],
 }
 
@@ -177,7 +183,7 @@ impl Board {
         Board {
             piece_list: Vec::new(),
             side: Color::White,
-            en_passant_square: None,
+            en_passant: None,
             castle_rights: [true, true],
         }
     }
@@ -222,11 +228,13 @@ impl Board {
         self.piece_list.iter().position(|(_, square2)| square == *square2).is_some()
     }
 
-    fn apply_move(&mut self, m: Move) {
+    fn apply_move(&mut self, m: &mut Move) {
         self.side = self.side.switch();
+        m.en_passant_before = self.en_passant;
+        self.en_passant = m.en_passant_after;
 
-        if m.capture.is_some() {
-            let pos = self.piece_list.iter().position(|&x| x.1 == m.to).unwrap();
+        if let Some(capture) = m.capture {
+            let pos = self.piece_list.iter().position(|&x| x.1 == capture.1).unwrap();
             self.piece_list.remove(pos);
         }
 
@@ -246,6 +254,7 @@ impl Board {
 
     fn revert_move(&mut self, m: Move) {
         self.side = self.side.switch();
+        self.en_passant = m.en_passant_before;
 
         for t in self.piece_list.iter_mut() {
             if t.1 == m.to {
@@ -257,8 +266,7 @@ impl Board {
             }
         }
 
-        if m.capture.is_some() {
-            let capture = m.capture.unwrap();
+        if let Some(capture) = m.capture {
             self.piece_list.push(capture);
         }
 
@@ -340,15 +348,15 @@ impl MinimaxEvaluator {
             return static_evaluation(&board);
         }
 
-        let moves = generate_moves(&board);
+        let mut moves = generate_moves(&board);
         if moves.is_empty() {
             return static_evaluation(&board);
         }
 
         let mut best_move_evaluation = None;
 
-        for m in moves.iter() {
-            board.apply_move(*m);
+        for mut m in moves.iter_mut() {
+            board.apply_move(m);
 
             let evaluation = self.minimax(board, depth - 1, neg * -1.0) * neg;
 
@@ -462,7 +470,7 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                     generate_pawn_move(piece, square, &square.delta(0, forward), &None, &mut moves);
 
                     if square.rank() == home_rank && !board.has_piece_at(square.delta(0, forward * 2)) && square.delta(0, forward * 2).is_on_board() {
-                        moves.push(Move::from_to(*square, square.delta(0, forward * 2)));
+                        moves.push(Move::from_to_en_passant(*square, square.delta(0, forward * 2), square.delta(0, forward)));
                     }
                 }
 
@@ -477,7 +485,7 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                         }
                     }
 
-                    if board.en_passant_square.is_some() && board.en_passant_square.unwrap() == square.delta(*file_delta, forward) {
+                    if board.en_passant.is_some() && board.en_passant.unwrap() == square.delta(*file_delta, forward) {
                         let en_passant_piece = board.piece_at(square.delta(*file_delta, 0)).unwrap();
                         moves.push(Move::from_to_capture(*square, square.delta(*file_delta, forward), (en_passant_piece, square.delta(*file_delta, 0))));
                     }
@@ -505,6 +513,11 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                 for (x_delta, y_delta) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (-1, -1), (1, -1)].iter() {
                     probe_move(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
+                //
+                // // Generate castling
+                // if board.castle_rights[piece.color.index()] {
+                //
+                // }
             }
             PieceKind::Knight => {
                 for (x_delta, y_delta) in [(-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1)].iter() {
@@ -512,6 +525,13 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                 }
             }
             PieceKind::Dummy => {}
+        }
+    }
+
+    // Preserve the current en passant square
+    if let Some(en_passant) = board.en_passant {
+        for mut move_ in moves.iter_mut() {
+            move_.en_passant_before = Some(en_passant);
         }
     }
 
@@ -531,7 +551,7 @@ mod tests {
 
         let expected_moves = vec!(
             Move::from_to(Square::at(2, 1), Square::at(2, 2)),
-            Move::from_to(Square::at(2, 1), Square::at(2, 3)),
+            Move::from_to_en_passant(Square::at(2, 1), Square::at(2, 3), Square::at(2, 2)),
             Move::from_to(Square::at(3, 2), Square::at(3, 3)),
         );
         assert_eq!(generate_moves(&board), expected_moves);
@@ -539,7 +559,7 @@ mod tests {
         board.side = Color::Black;
         let expected_moves = vec!(
             Move::from_to(Square::at(0, 6), Square::at(0, 5)),
-            Move::from_to(Square::at(0, 6), Square::at(0, 4)),
+            Move::from_to_en_passant(Square::at(0, 6), Square::at(0, 4), Square::at(0, 5)),
         );
         assert_eq!(generate_moves(&board), expected_moves);
     }
@@ -590,22 +610,28 @@ mod tests {
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(5, 3));
         board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(7, 3));
 
-        board.en_passant_square = Some(Square::at(2, 5));
-        let expected_moves = vec!(
+        board.en_passant = Some(Square::at(2, 5));
+        let mut expected_moves = vec!(
             Move::from_to(Square::at(1, 4), Square::at(1, 5)),
             Move::from_to_capture(Square::at(1, 4), Square::at(2, 5), PieceKind::Pawn.colored(Color::Black).at(2, 4)),
             Move::from_to(Square::at(5, 3), Square::at(5, 4))
         );
+        for mut move_ in expected_moves.iter_mut() {
+            move_.en_passant_before = board.en_passant;
+        }
         assert_eq!(generate_moves(&board), expected_moves);
 
         board.side = Color::Black;
-        board.en_passant_square = Some(Square::at(5, 2));
-        let expected_moves = vec!(
+        board.en_passant = Some(Square::at(5, 2));
+        let mut expected_moves = vec!(
             Move::from_to(Square::at(2, 4), Square::at(2, 3)),
             Move::from_to(Square::at(4, 3), Square::at(4, 2)),
             Move::from_to_capture(Square::at(4, 3), Square::at(5, 2), PieceKind::Pawn.colored(Color::White).at(5, 3)),
             Move::from_to(Square::at(7, 3), Square::at(7, 2)),
         );
+        for mut move_ in expected_moves.iter_mut() {
+            move_.en_passant_before = board.en_passant;
+        }
         assert_eq!(generate_moves(&board), expected_moves);
     }
 
@@ -789,10 +815,10 @@ mod tests {
     fn board_apply_and_revert_move() {
         let mut board = Board::create_empty();
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(0, 1));
-        let move_ = Move::from_to(Square::at(0, 1), Square::at(0, 2));
+        let mut move_ = Move::from_to(Square::at(0, 1), Square::at(0, 2));
 
         // Apply the move
-        board.apply_move(move_);
+        board.apply_move(&mut move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -810,13 +836,13 @@ mod tests {
     #[test]
     fn board_apply_and_revert_move_with_capture() {
         let mut board = Board::create_empty();
-        let move_ = Move::from_to_capture(Square::at(0, 1), Square::at(1, 2), PieceKind::Pawn.colored(Color::Black).at(1, 2));
+        let mut move_ = Move::from_to_capture(Square::at(0, 1), Square::at(1, 2), PieceKind::Pawn.colored(Color::Black).at(1, 2));
 
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(0, 1));
         board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(1, 2));
 
         // Apply the move
-        board.apply_move(move_);
+        board.apply_move(&mut move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -835,14 +861,71 @@ mod tests {
     }
 
     #[test]
+    fn board_apply_and_revert_move_with_en_passant_square() {
+        let mut board = Board::create_empty();
+        let mut move_ = Move::from_to(Square::at(2, 4), Square::at(2, 5));
+
+        board.en_passant = Some(Square::at(4, 2));
+        board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(2, 4));
+
+        // Apply the move
+        assert_eq!(move_.en_passant_before, None);
+        board.apply_move(&mut move_);
+        assert_eq!(move_.en_passant_before, Some(Square::at(4, 2)));
+
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.en_passant = None;
+        expected_board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(2, 5));
+
+        assert_eq!(board, expected_board);
+
+        // Revert the move
+        board.revert_move(move_);
+
+        let mut expected_board = Board::create_empty();
+        expected_board.en_passant = Some(Square::at(4, 2));
+        expected_board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(2, 4));
+
+        assert_eq!(board, expected_board);
+    }
+
+    #[test]
+    fn board_apply_and_revert_move_with_en_passant_capture() {
+        let mut board = Board::create_empty();
+        let mut move_ = Move::from_to_capture(Square::at(2, 4), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 4));
+
+        board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(1, 4));
+        board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(2, 4));
+
+        // Apply the move
+        board.apply_move(&mut move_);
+
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(1, 5));
+
+        assert_eq!(board, expected_board);
+
+        // Revert the move
+        board.revert_move(move_);
+
+        let mut expected_board = Board::create_empty();
+        expected_board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(2, 4));
+        expected_board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(1, 4));
+
+        assert_eq!(board, expected_board);
+    }
+
+    #[test]
     fn board_apply_and_revert_move_with_promotion() {
         let mut board = Board::create_empty();
-        let move_ = Move::promotion(Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop);
+        let mut move_ = Move::promotion(Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop);
 
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(1, 6));
 
         // Apply the move
-        board.apply_move(move_);
+        board.apply_move(&mut move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -862,13 +945,13 @@ mod tests {
     #[test]
     fn board_apply_and_revert_move_with_capture_and_promotion() {
         let mut board = Board::create_empty();
-        let move_ = Move::promotion_capture(Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop);
+        let mut move_ = Move::promotion_capture(Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop);
 
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(1, 6));
         board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(2, 7));
 
         // Apply the move
-        board.apply_move(move_);
+        board.apply_move(&mut move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -981,7 +1064,7 @@ fn play(board: &mut Board) {
             break;
         }
 
-        let moves = generate_moves(board);
+        let mut moves = generate_moves(board);
         println!("{} moves to choose from", moves.len());
 
         let mut best_move = Option::None;
@@ -994,10 +1077,10 @@ fn play(board: &mut Board) {
 
         let mut evaluator = MinimaxEvaluator::create();
 
-        for move_ in moves {
+        for move_ in moves.iter_mut() {
             board.apply_move(move_);
             let evaluation = evaluator.evaluate(board, max_depth) * neg;
-            board.revert_move(move_);
+            board.revert_move(*move_);
 
             //println!("Evaluating {:?} with {}", move_, evaluation * neg);
             if evaluation > best_move_evaluation {
@@ -1007,10 +1090,11 @@ fn play(board: &mut Board) {
         }
 
         let nodes_per_second = evaluator.statistics.node_count as f32 / evaluator.statistics.duration.as_secs_f32();
+        let best_move = best_move.unwrap();
 
-        println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes/s", best_move.unwrap(), best_move_evaluation * neg, nodes_per_second);
+        println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes/s", best_move, best_move_evaluation * neg, nodes_per_second);
 
-        board.apply_move(best_move.unwrap());
+        board.apply_move(best_move);
 
         num_moves += 1;
         if num_moves > 50 {
