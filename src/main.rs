@@ -69,6 +69,12 @@ impl Color {
             Color::Black => 0
         }
     }
+    fn back_rank(&self) -> u8 {
+        match self {
+            Color::White => 0,
+            Color::Black => 7
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -138,45 +144,68 @@ struct Move {
     capture: Option<PieceOnBoard>,
     en_passant_before: Option<Square>,
     en_passant_after: Option<Square>,
+
+    castle_rights_before: CastleRights,
+    castle_rights_after: CastleRights,
+
     is_castling: bool,
     promotion: Option<PieceKind>,
 }
 
 impl Move {
     fn castling(from: Square, to: Square) -> Move {
-        Move { from, to, capture: None, en_passant_before: None, en_passant_after: None, is_castling: true, promotion: None }
+        let mut m = Move::from_to(from, to);
+        m.is_castling =  true;
+        return m;
     }
 
     fn promotion(from: Square, to: Square, promotion: PieceKind) -> Move {
-        Move { from, to, capture: None, en_passant_before: None, en_passant_after: None, is_castling: false, promotion: Some(promotion) }
+        let mut m = Move::from_to(from, to);
+        m.promotion = Some(promotion);
+        return m;
     }
 
     fn promotion_capture(from: Square, to: Square, capture: PieceOnBoard, promotion: PieceKind) -> Move {
-        Move { from, to, capture: Some(capture), en_passant_before: None, en_passant_after: None, is_castling: false, promotion: Some(promotion) }
+        let mut m = Move::from_to(from, to);
+        m.capture = Some(capture);
+        m.promotion = Some(promotion);
+        return m;
     }
 
     fn from_to(from: Square, to: Square) -> Move {
-        Move { from, to, capture: None, en_passant_before: None, en_passant_after: None, is_castling: false, promotion: None }
+        Move { from, to, capture: None,
+            en_passant_before: None,
+            en_passant_after: None,
+            castle_rights_before: [true; 4],
+            castle_rights_after: [true; 4],
+            is_castling: false,
+            promotion: None }
     }
 
     fn from_to_en_passant(from: Square, to: Square, en_passant: Square) -> Move {
-        Move { from, to, capture: None, en_passant_before: None, en_passant_after: Some(en_passant), is_castling: false, promotion: None }
+        let mut m = Move::from_to(from, to);
+        m.en_passant_after = Some(en_passant);
+        return m;
     }
 
     fn from_to_capture(from: Square, to: Square, capture: PieceOnBoard) -> Move {
-        Move { from, to, capture: Some(capture), en_passant_before: None, en_passant_after: None, is_castling: false, promotion: None }
+        let mut m = Move::from_to(from, to);
+        m.capture = Some(capture);
+        return m;
     }
 }
 
 type PieceOnBoard = (Piece, Square);
+
+// [White King Side, White Queen Side, Black King Side, Black Queen Side]
+type CastleRights = [bool; 4];
 
 #[derive(Debug, PartialEq)]
 struct Board {
     piece_list: Vec<PieceOnBoard>,
     side: Color,
     en_passant: Option<Square>,
-    castle_right_king_side: [bool; 2],
-    castle_right_queen_side: [bool; 2],
+    castle_rights: CastleRights,
 }
 
 impl Board {
@@ -185,8 +214,7 @@ impl Board {
             piece_list: Vec::new(),
             side: Color::White,
             en_passant: None,
-            castle_right_king_side: [true, true],
-            castle_right_queen_side: [true, true],
+            castle_rights: [false; 4],
         }
     }
 
@@ -213,6 +241,8 @@ impl Board {
         board.piece_list.push(PieceKind::Queen.colored(Color::Black).at(3, 7));
         board.piece_list.push(PieceKind::King.colored(Color::Black).at(4, 7));
 
+        board.castle_rights = [true; 4];
+
         return board;
     }
 
@@ -231,7 +261,7 @@ impl Board {
 
     fn apply_move(&mut self, m: Move) {
         assert_eq!(m.en_passant_before, self.en_passant);
-g
+
         self.side = self.side.switch();
         self.en_passant = m.en_passant_after;
 
@@ -271,7 +301,6 @@ g
         if let Some(capture) = m.capture {
             self.piece_list.push(capture);
         }
-
     }
 
     fn is_game_over(&self) -> bool {
@@ -515,11 +544,19 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                 for (x_delta, y_delta) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (-1, -1), (1, -1)].iter() {
                     probe_move(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
-                //
-                // // Generate castling
-                // if board.castle_rights[piece.color.index()] {
-                //
-                // }
+
+                // Generate King side castling
+                if board.castle_rights[piece.color.index() + 0] {
+                    if !board.has_piece_at(Square::at(1, piece.color.back_rank() as i8)) && !board.has_piece_at(Square::at(2, piece.color.back_rank() as i8)) {
+                        moves.push(Move::castling(*square, Square::at(2, piece.color.back_rank() as i8)));
+                    }
+                }
+                // Generate Queen side castling
+                if board.castle_rights[piece.color.index() + 1] {
+                    if !board.has_piece_at(Square::at(4, piece.color.back_rank() as i8)) && !board.has_piece_at(Square::at(5, piece.color.back_rank() as i8)) && !board.has_piece_at(Square::at(6, piece.color.back_rank() as i8)) {
+                        moves.push(Move::castling(*square, Square::at(5, piece.color.back_rank() as i8)));
+                    }
+                }
             }
             PieceKind::Knight => {
                 for (x_delta, y_delta) in [(-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1)].iter() {
@@ -538,8 +575,9 @@ fn generate_moves(board: &Board) -> Vec<Move> {
     }
 
     // Preserve the current castling rights
-    // move_.castle_right_king_side_before = board.castle_right_king_side;
-    // move_.castle_right_queen_side_before = board.castle_right_queen_side;
+    for mut move_ in moves.iter_mut() {
+        move_.castle_rights_before = board.castle_rights;
+    }
 
     return moves;
 }
@@ -675,7 +713,6 @@ mod tests {
             Move::promotion_capture(Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Queen),
         );
         assert_eq!(generate_moves(&board), expected_moves);
-
     }
 
     #[test]
