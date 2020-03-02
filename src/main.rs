@@ -175,7 +175,8 @@ struct Board {
     piece_list: Vec<PieceOnBoard>,
     side: Color,
     en_passant: Option<Square>,
-    castle_rights: [bool; 2],
+    castle_right_king_side: [bool; 2],
+    castle_right_queen_side: [bool; 2],
 }
 
 impl Board {
@@ -184,7 +185,8 @@ impl Board {
             piece_list: Vec::new(),
             side: Color::White,
             en_passant: None,
-            castle_rights: [true, true],
+            castle_right_king_side: [true, true],
+            castle_right_queen_side: [true, true],
         }
     }
 
@@ -211,7 +213,6 @@ impl Board {
         board.piece_list.push(PieceKind::Queen.colored(Color::Black).at(3, 7));
         board.piece_list.push(PieceKind::King.colored(Color::Black).at(4, 7));
 
-
         return board;
     }
 
@@ -228,9 +229,10 @@ impl Board {
         self.piece_list.iter().position(|(_, square2)| square == *square2).is_some()
     }
 
-    fn apply_move(&mut self, m: &mut Move) {
+    fn apply_move(&mut self, m: Move) {
+        assert_eq!(m.en_passant_before, self.en_passant);
+g
         self.side = self.side.switch();
-        m.en_passant_before = self.en_passant;
         self.en_passant = m.en_passant_after;
 
         if let Some(capture) = m.capture {
@@ -355,8 +357,8 @@ impl MinimaxEvaluator {
 
         let mut best_move_evaluation = None;
 
-        for mut m in moves.iter_mut() {
-            board.apply_move(m);
+        for m in moves.iter() {
+            board.apply_move(*m);
 
             let evaluation = self.minimax(board, depth - 1, neg * -1.0) * neg;
 
@@ -534,6 +536,10 @@ fn generate_moves(board: &Board) -> Vec<Move> {
             move_.en_passant_before = Some(en_passant);
         }
     }
+
+    // Preserve the current castling rights
+    // move_.castle_right_king_side_before = board.castle_right_king_side;
+    // move_.castle_right_queen_side_before = board.castle_right_queen_side;
 
     return moves;
 }
@@ -818,7 +824,7 @@ mod tests {
         let mut move_ = Move::from_to(Square::at(0, 1), Square::at(0, 2));
 
         // Apply the move
-        board.apply_move(&mut move_);
+        board.apply_move(move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -842,7 +848,7 @@ mod tests {
         board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(1, 2));
 
         // Apply the move
-        board.apply_move(&mut move_);
+        board.apply_move(move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -864,14 +870,13 @@ mod tests {
     fn board_apply_and_revert_move_with_en_passant_square() {
         let mut board = Board::create_empty();
         let mut move_ = Move::from_to(Square::at(2, 4), Square::at(2, 5));
+        move_.en_passant_before = Some(Square::at(4, 2));
 
         board.en_passant = Some(Square::at(4, 2));
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(2, 4));
 
         // Apply the move
-        assert_eq!(move_.en_passant_before, None);
-        board.apply_move(&mut move_);
-        assert_eq!(move_.en_passant_before, Some(Square::at(4, 2)));
+        board.apply_move(move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -899,7 +904,7 @@ mod tests {
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(2, 4));
 
         // Apply the move
-        board.apply_move(&mut move_);
+        board.apply_move(move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -925,7 +930,7 @@ mod tests {
         board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(1, 6));
 
         // Apply the move
-        board.apply_move(&mut move_);
+        board.apply_move(move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -951,7 +956,7 @@ mod tests {
         board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(2, 7));
 
         // Apply the move
-        board.apply_move(&mut move_);
+        board.apply_move(move_);
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
@@ -1077,8 +1082,8 @@ fn play(board: &mut Board) {
 
         let mut evaluator = MinimaxEvaluator::create();
 
-        for move_ in moves.iter_mut() {
-            board.apply_move(move_);
+        for move_ in moves.iter() {
+            board.apply_move(*move_);
             let evaluation = evaluator.evaluate(board, max_depth) * neg;
             board.revert_move(*move_);
 
@@ -1094,7 +1099,7 @@ fn play(board: &mut Board) {
 
         println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes/s", best_move, best_move_evaluation * neg, nodes_per_second);
 
-        board.apply_move(best_move);
+        board.apply_move(*best_move);
 
         num_moves += 1;
         if num_moves > 50 {
