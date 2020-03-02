@@ -1,6 +1,7 @@
 extern crate num_traits;
 
 use num_traits::Float;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Square {
@@ -262,39 +263,82 @@ fn static_evaluation(board: &Board) -> f32 {
     return evaluation;
 }
 
-fn minimax(board: &mut Board, depth: u32, neg: f32) -> f32 {
-    if depth == 0 {
-        return static_evaluation(&board);
-    }
-
-    let moves = generate_moves(&board);
-    if moves.is_empty() {
-        return static_evaluation(&board);
-    }
-
-    let mut best_move_evaluation = None;
-
-    for m in moves.iter() {
-        board.apply_move(*m);
-
-        let evaluation = minimax(board, depth - 1, neg * -1.0) * neg;
-
-        board.revert_move(*m);
-
-        if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
-            best_move_evaluation = Some(evaluation);
-        }
-    }
-
-    return best_move_evaluation.unwrap() * neg;
+#[derive(Clone, Copy, Debug)]
+struct DynamicEvaluatorStatistics {
+    node_count: u64,
+    duration: std::time::Duration
 }
 
-fn dynamic_evaluation(board: &mut Board, depth: u32) -> f32 {
-    let neg = match board.side {
-        Color::White => 1.0,
-        Color::Black => -1.0
-    };
-    minimax(board, depth, neg) * neg
+impl DynamicEvaluatorStatistics {
+    fn create() -> DynamicEvaluatorStatistics {
+        DynamicEvaluatorStatistics {
+            node_count: 0,
+            duration: std::time::Duration::new(0, 0)
+        }
+    }
+}
+
+trait DynamicEvaluator {
+    fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32;
+    fn get_statistics(&self) -> DynamicEvaluatorStatistics;
+}
+
+struct MinimaxEvaluator {
+    statistics: DynamicEvaluatorStatistics
+}
+
+impl MinimaxEvaluator {
+    fn create() -> MinimaxEvaluator {
+        MinimaxEvaluator { statistics: DynamicEvaluatorStatistics::create() }
+    }
+
+    fn minimax(&mut self, board: &mut Board, depth: u32, neg: f32) -> f32 {
+        self.statistics.node_count += 1;
+
+        if depth == 0 {
+            return static_evaluation(&board);
+        }
+
+        let moves = generate_moves(&board);
+        if moves.is_empty() {
+            return static_evaluation(&board);
+        }
+
+        let mut best_move_evaluation = None;
+
+        for m in moves.iter() {
+            board.apply_move(*m);
+
+            let evaluation = self.minimax(board, depth - 1, neg * -1.0) * neg;
+
+            board.revert_move(*m);
+
+            if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
+                best_move_evaluation = Some(evaluation);
+            }
+        }
+
+        return best_move_evaluation.unwrap() * neg;
+    }
+}
+
+impl DynamicEvaluator for MinimaxEvaluator {
+    fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32 {
+        let neg = match board.side {
+            Color::White => 1.0,
+            Color::Black => -1.0
+        };
+
+        let stopwatch = std::time::Instant::now();
+        let evaluation = self.minimax(board, depth, neg) * neg;
+        self.statistics.duration += stopwatch.elapsed();
+
+        return evaluation;
+    }
+
+    fn get_statistics(&self) -> DynamicEvaluatorStatistics {
+        self.statistics
+    }
 }
 
 // Add a move by x_delta, y_delta to the moves if the target square is on board and is unoccupied
@@ -771,10 +815,11 @@ mod tests {
 fn play(board: &mut Board) {
     let mut num_moves = 0;
 
-    let max_depth = 4;
+    let max_depth = 5;
 
     loop {
-        let d = dynamic_evaluation(board, max_depth);
+        let mut evaluator = MinimaxEvaluator::create();
+        let d = evaluator.evaluate(board, max_depth);
         println!("{:?}'s turn, static evaluation is {}, dynamic evaluation is {}", board.side, static_evaluation(&board), d);
         board.print();
 
@@ -794,9 +839,11 @@ fn play(board: &mut Board) {
             Color::Black => -1.0
         };
 
+        let mut evaluator = MinimaxEvaluator::create();
+
         for move_ in moves {
             board.apply_move(move_);
-            let evaluation = minimax(board, max_depth, neg * -1.0) * neg;
+            let evaluation = evaluator.evaluate(board, max_depth) * neg;
             board.revert_move(move_);
 
             //println!("Evaluating {:?} with {}", move_, evaluation * neg);
@@ -806,7 +853,9 @@ fn play(board: &mut Board) {
             }
         }
 
-        println!("Chose move {:?} with an evaluation of {}", best_move.unwrap(), best_move_evaluation * neg);
+        let nodes_per_second = evaluator.statistics.node_count as f32 / evaluator.statistics.duration.as_secs_f32();
+
+        println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes/s", best_move.unwrap(), best_move_evaluation * neg, nodes_per_second);
 
         board.apply_move(best_move.unwrap());
 
