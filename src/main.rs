@@ -158,7 +158,7 @@ struct Move {
 }
 
 impl Move {
-    fn castling(board: &Board, from: Square, to: Square, castle: Castle) -> Move {
+    fn castle(board: &Board, from: Square, to: Square, castle: Castle) -> Move {
         let mut m = Move::from_to(board, PieceKind::King, from, to);
         m.castle = Some(castle);
 
@@ -656,19 +656,19 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                     probe_move(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
 
-                // Generate King side castling
+                // Generate King side castle
                 if board.castle_rights.get_rights(piece.color).test(Castle::KingSide) {
                     if !board.has_piece_at(Square::at(5, piece.color.back_rank() as i8)) &&
                         !board.has_piece_at(Square::at(6, piece.color.back_rank() as i8)) {
-                        moves.push(Move::castling(board, *square, Square::at(6, piece.color.back_rank() as i8), Castle::KingSide));
+                        moves.push(Move::castle(board, *square, Square::at(6, piece.color.back_rank() as i8), Castle::KingSide));
                     }
                 }
-                // Generate Queen side castling
+                // Generate Queen side castle
                 if board.castle_rights.get_rights(piece.color).test(Castle::QueenSide) {
                     if !board.has_piece_at(Square::at(3, piece.color.back_rank() as i8)) &&
                         !board.has_piece_at(Square::at(2, piece.color.back_rank() as i8)) &&
                         !board.has_piece_at(Square::at(1, piece.color.back_rank() as i8)) {
-                        moves.push(Move::castling(board, *square, Square::at(2, piece.color.back_rank() as i8), Castle::QueenSide));
+                        moves.push(Move::castle(board, *square, Square::at(2, piece.color.back_rank() as i8), Castle::QueenSide));
                     }
                 }
             }
@@ -696,8 +696,8 @@ mod tests {
             Move::from_to(board, board.piece_at(from).unwrap().kind, from, to)
         }
 
-        fn castling(board: &Board, from: Square, to: Square, castle: Castle) -> Move {
-            Move::castling(board, from, to, castle)
+        fn castle(board: &Board, from: Square, to: Square, castle: Castle) -> Move {
+            Move::castle(board, from, to, castle)
         }
 
         fn promotion(board: &Board, from: Square, to: Square, promotion: PieceKind) -> Move {
@@ -975,19 +975,19 @@ mod tests {
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
 
-        // No castle rights, no castling
+        // No castle rights, no castle
         board.castle_rights = BoardCastleRights::none();
-        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
 
         // Castle only where rights are granted
         board.castle_rights = BoardCastleRights::none();
         board.castle_rights.white.king_side = true;
-        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
         board.castle_rights.white.queen_side = true;
-        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
-        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
     }
 
     #[test]
@@ -1206,7 +1206,7 @@ mod tests {
             PieceKind::Rook.colored(Color::White).at(7, 0));
         board.castle_rights = BoardCastleRights::all();
 
-        let mut move_ = TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide);
+        let mut move_ = TestMove::castle(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide);
 
         // Apply the move
         board.apply_move(move_);
