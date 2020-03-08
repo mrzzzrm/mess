@@ -677,71 +677,64 @@ fn generate_moves(board: &Board) -> Vec<Move> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[derive(Debug, PartialEq)]
-    struct TestBoard {
-        board: Board
-    }
-
-    impl TestBoard {
-        fn create_empty() -> TestBoard {
-            TestBoard { board: Board::create_empty() }
-        }
-
+    
+    struct TestMove {}
+    
+    impl TestMove {
         // Wrapper around Move::from_to() that performs a lookup of the PieceKind
-        fn from_to(&self, from: Square, to: Square) -> Move {
-            Move::from_to(&self.board, self.board.piece_at(from).unwrap().kind, from, to)
+        fn from_to(board: &Board, from: Square, to: Square) -> Move {
+            Move::from_to(board, board.piece_at(from).unwrap().kind, from, to)
         }
 
-        fn castling(&self, from: Square, to: Square, castle: Castle) -> Move {
-            Move::castling(&self.board, from, to, castle)
+        fn castling(board: &Board, from: Square, to: Square, castle: Castle) -> Move {
+            Move::castling(board, from, to, castle)
         }
 
-        fn promotion(&self, from: Square, to: Square, promotion: PieceKind) -> Move {
-            Move::promotion(&self.board, from, to, promotion)
+        fn promotion(board: &Board, from: Square, to: Square, promotion: PieceKind) -> Move {
+            Move::promotion(board, from, to, promotion)
         }
 
-        fn promotion_capture(&self, from: Square, to: Square, capture: PieceOnBoard, promotion: PieceKind) -> Move {
-            Move::promotion_capture(&self.board, from, to, capture, promotion)
+        fn promotion_capture(board: &Board, from: Square, to: Square, capture: PieceOnBoard, promotion: PieceKind) -> Move {
+            Move::promotion_capture(board, from, to, capture, promotion)
         }
 
-        fn from_to_en_passant(&self, from: Square, to: Square, en_passant: Square) -> Move {
-            Move::from_to_en_passant(&self.board, from, to, en_passant)
+        fn from_to_en_passant(board: &Board, from: Square, to: Square, en_passant: Square) -> Move {
+            Move::from_to_en_passant(board, from, to, en_passant)
         }
 
         // Wrapper around Move::from_to_capture() that performs a lookup of the PieceKind
-        fn from_to_capture(&self, from: Square, to: Square, capture: PieceOnBoard) -> Move {
-            Move::from_to_capture(&self.board, self.board.piece_at(from).unwrap().kind, from, to, capture)
+        fn from_to_capture(board: &Board, from: Square, to: Square, capture: PieceOnBoard) -> Move {
+            Move::from_to_capture(board, board.piece_at(from).unwrap().kind, from, to, capture)
         }
     }
 
     #[test]
     fn pawn_moves() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(0, 6),
             PieceKind::Pawn.colored(Color::White).at(2, 1),
             PieceKind::Pawn.colored(Color::White).at(3, 2));
 
         let expected_moves = vec!(
-            board.from_to(Square::at(2, 1), Square::at(2, 2)),
-            board.from_to_en_passant(Square::at(2, 1), Square::at(2, 3), Square::at(2, 2)),
-            board.from_to(Square::at(3, 2), Square::at(3, 3)),
+            TestMove::from_to(&board, Square::at(2, 1), Square::at(2, 2)),
+            TestMove::from_to_en_passant(&board, Square::at(2, 1), Square::at(2, 3), Square::at(2, 2)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(3, 3)),
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
 
-        board.board.side = Color::Black;
+        board.side = Color::Black;
         let expected_moves = vec!(
-            board.from_to(Square::at(0, 6), Square::at(0, 5)),
-            board.from_to_en_passant(Square::at(0, 6), Square::at(0, 4), Square::at(0, 5)),
+            TestMove::from_to(&board, Square::at(0, 6), Square::at(0, 5)),
+            TestMove::from_to_en_passant(&board, Square::at(0, 6), Square::at(0, 4), Square::at(0, 5)),
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn pawn_moves_blocked() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(0, 6),
             PieceKind::Dummy.colored(Color::White).at(0, 4),
             PieceKind::Pawn.colored(Color::Black).at(5, 3),
@@ -752,154 +745,154 @@ mod tests {
             PieceKind::Dummy.colored(Color::White).at(3, 3));
 
         let expected_moves = vec!(
-            board.from_to(Square::at(3, 1), Square::at(3, 2))
+            TestMove::from_to(&board, Square::at(3, 1), Square::at(3, 2))
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
 
-        board.board.side = Color::Black;
+        board.side = Color::Black;
         let expected_moves = vec!(
-            board.from_to(Square::at(0, 6), Square::at(0, 5))
+            TestMove::from_to(&board, Square::at(0, 6), Square::at(0, 5))
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn pawn_moves_capture() {
-        let mut board = TestBoard::create_empty();
-        board.board.side = Color::Black;
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(0, 6),
             PieceKind::Pawn.colored(Color::White).at(0, 5),
             PieceKind::Pawn.colored(Color::White).at(1, 5), );
         let expected_moves = vec!(
-            board.from_to_capture(Square::at(0, 6), Square::at(1, 5), PieceKind::Pawn.colored(Color::White).at(1, 5)),
+            TestMove::from_to_capture(&board, Square::at(0, 6), Square::at(1, 5), PieceKind::Pawn.colored(Color::White).at(1, 5)),
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn pawn_moves_en_passant() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 4),
             PieceKind::Pawn.colored(Color::Black).at(2, 4),
             PieceKind::Pawn.colored(Color::Black).at(4, 3),
             PieceKind::Pawn.colored(Color::White).at(5, 3),
             PieceKind::Pawn.colored(Color::Black).at(7, 3), );
 
-        board.board.en_passant = Some(Square::at(2, 5));
+        board.en_passant = Some(Square::at(2, 5));
         let mut expected_moves = vec!(
-            board.from_to(Square::at(1, 4), Square::at(1, 5)),
-            board.from_to_capture(Square::at(1, 4), Square::at(2, 5), PieceKind::Pawn.colored(Color::Black).at(2, 4)),
-            board.from_to(Square::at(5, 3), Square::at(5, 4))
+            TestMove::from_to(&board, Square::at(1, 4), Square::at(1, 5)),
+            TestMove::from_to_capture(&board, Square::at(1, 4), Square::at(2, 5), PieceKind::Pawn.colored(Color::Black).at(2, 4)),
+            TestMove::from_to(&board, Square::at(5, 3), Square::at(5, 4))
         );
         for mut move_ in expected_moves.iter_mut() {
-            move_.en_passant_before = board.board.en_passant;
+            move_.en_passant_before = board.en_passant;
         }
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
 
-        board.board.side = Color::Black;
-        board.board.en_passant = Some(Square::at(5, 2));
+        board.side = Color::Black;
+        board.en_passant = Some(Square::at(5, 2));
         let mut expected_moves = vec!(
-            board.from_to(Square::at(2, 4), Square::at(2, 3)),
-            board.from_to(Square::at(4, 3), Square::at(4, 2)),
-            board.from_to_capture(Square::at(4, 3), Square::at(5, 2), PieceKind::Pawn.colored(Color::White).at(5, 3)),
-            board.from_to(Square::at(7, 3), Square::at(7, 2)),
+            TestMove::from_to(&board, Square::at(2, 4), Square::at(2, 3)),
+            TestMove::from_to(&board, Square::at(4, 3), Square::at(4, 2)),
+            TestMove::from_to_capture(&board, Square::at(4, 3), Square::at(5, 2), PieceKind::Pawn.colored(Color::White).at(5, 3)),
+            TestMove::from_to(&board, Square::at(7, 3), Square::at(7, 2)),
         );
         for mut move_ in expected_moves.iter_mut() {
-            move_.en_passant_before = board.board.en_passant;
+            move_.en_passant_before = board.en_passant;
         }
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn pawn_moves_promotion() {
         // White pawn that can promote
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6),
             PieceKind::Pawn.colored(Color::Black).at(2, 7), );
         let expected_moves = vec!(
-            board.promotion(Square::at(1, 6), Square::at(1, 7), PieceKind::Knight),
-            board.promotion(Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop),
-            board.promotion(Square::at(1, 6), Square::at(1, 7), PieceKind::Rook),
-            board.promotion(Square::at(1, 6), Square::at(1, 7), PieceKind::Queen),
-            board.promotion_capture(Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Knight),
-            board.promotion_capture(Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop),
-            board.promotion_capture(Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Rook),
-            board.promotion_capture(Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Queen),
+            TestMove::promotion(&board, Square::at(1, 6), Square::at(1, 7), PieceKind::Knight),
+            TestMove::promotion(&board, Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop),
+            TestMove::promotion(&board, Square::at(1, 6), Square::at(1, 7), PieceKind::Rook),
+            TestMove::promotion(&board, Square::at(1, 6), Square::at(1, 7), PieceKind::Queen),
+            TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Knight),
+            TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop),
+            TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Rook),
+            TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Queen),
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
 
         // Black pawn that can promote
-        let mut board = TestBoard::create_empty();
-        board.board.side = Color::Black;
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(1, 1),
             PieceKind::Pawn.colored(Color::White).at(2, 0), );
         let expected_moves = vec!(
-            board.promotion(Square::at(1, 1), Square::at(1, 0), PieceKind::Knight),
-            board.promotion(Square::at(1, 1), Square::at(1, 0), PieceKind::Bishop),
-            board.promotion(Square::at(1, 1), Square::at(1, 0), PieceKind::Rook),
-            board.promotion(Square::at(1, 1), Square::at(1, 0), PieceKind::Queen),
-            board.promotion_capture(Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Knight),
-            board.promotion_capture(Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Bishop),
-            board.promotion_capture(Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Rook),
-            board.promotion_capture(Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Queen),
+            TestMove::promotion(&board, Square::at(1, 1), Square::at(1, 0), PieceKind::Knight),
+            TestMove::promotion(&board, Square::at(1, 1), Square::at(1, 0), PieceKind::Bishop),
+            TestMove::promotion(&board, Square::at(1, 1), Square::at(1, 0), PieceKind::Rook),
+            TestMove::promotion(&board, Square::at(1, 1), Square::at(1, 0), PieceKind::Queen),
+            TestMove::promotion_capture(&board, Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Knight),
+            TestMove::promotion_capture(&board, Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Bishop),
+            TestMove::promotion_capture(&board, Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Rook),
+            TestMove::promotion_capture(&board, Square::at(1, 1), Square::at(2, 0), PieceKind::Pawn.colored(Color::White).at(2, 0), PieceKind::Queen),
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn rook_moves() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Rook.colored(Color::White).at(3, 3),
             PieceKind::Dummy.colored(Color::White).at(3, 5),
             PieceKind::Pawn.colored(Color::Black).at(1, 3), );
 
         let expected_moves = vec!(
-            board.from_to(Square::at(3, 3), Square::at(4, 3)),
-            board.from_to(Square::at(3, 3), Square::at(5, 3)),
-            board.from_to(Square::at(3, 3), Square::at(6, 3)),
-            board.from_to(Square::at(3, 3), Square::at(7, 3)),
-            board.from_to(Square::at(3, 3), Square::at(2, 3)),
-            board.from_to_capture(Square::at(3, 3), Square::at(1, 3), PieceKind::Pawn.colored(Color::Black).at(1, 3)),
-            board.from_to(Square::at(3, 3), Square::at(3, 4)),
-            board.from_to(Square::at(3, 3), Square::at(3, 2)),
-            board.from_to(Square::at(3, 3), Square::at(3, 1)),
-            board.from_to(Square::at(3, 3), Square::at(3, 0))
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(4, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(5, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(7, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 3)),
+            TestMove::from_to_capture(&board, Square::at(3, 3), Square::at(1, 3), PieceKind::Pawn.colored(Color::Black).at(1, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 4)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 2)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 1)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 0))
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn bishop_moves() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Bishop.colored(Color::White).at(3, 3),
             PieceKind::Dummy.colored(Color::White).at(1, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 5), );
 
         let expected_moves = vec!(
-            board.from_to(Square::at(3, 3), Square::at(4, 4)),
-            board.from_to(Square::at(3, 3), Square::at(5, 5)),
-            board.from_to(Square::at(3, 3), Square::at(6, 6)),
-            board.from_to(Square::at(3, 3), Square::at(7, 7)),
-            board.from_to(Square::at(3, 3), Square::at(2, 4)),
-            board.from_to_capture(Square::at(3, 3), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 5)),
-            board.from_to(Square::at(3, 3), Square::at(2, 2)),
-            board.from_to(Square::at(3, 3), Square::at(4, 2)),
-            board.from_to(Square::at(3, 3), Square::at(5, 1)),
-            board.from_to(Square::at(3, 3), Square::at(6, 0)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(4, 4)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(5, 5)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 6)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(7, 7)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 4)),
+            TestMove::from_to_capture(&board, Square::at(3, 3), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 5)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 2)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(4, 2)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(5, 1)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 0)),
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn queen_moves() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Queen.colored(Color::White).at(3, 3),
             PieceKind::Dummy.colored(Color::White).at(1, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 5),
@@ -907,168 +900,168 @@ mod tests {
             PieceKind::Pawn.colored(Color::Black).at(1, 3), );
 
         let expected_moves = vec!(
-            board.from_to(Square::at(3, 3), Square::at(4, 3)),
-            board.from_to(Square::at(3, 3), Square::at(5, 3)),
-            board.from_to(Square::at(3, 3), Square::at(6, 3)),
-            board.from_to(Square::at(3, 3), Square::at(7, 3)),
-            board.from_to(Square::at(3, 3), Square::at(2, 3)),
-            board.from_to_capture(Square::at(3, 3), Square::at(1, 3), PieceKind::Pawn.colored(Color::Black).at(1, 3)),
-            board.from_to(Square::at(3, 3), Square::at(3, 4)),
-            board.from_to(Square::at(3, 3), Square::at(3, 2)),
-            board.from_to(Square::at(3, 3), Square::at(3, 1)),
-            board.from_to(Square::at(3, 3), Square::at(3, 0)),
-            board.from_to(Square::at(3, 3), Square::at(4, 4)),
-            board.from_to(Square::at(3, 3), Square::at(5, 5)),
-            board.from_to(Square::at(3, 3), Square::at(6, 6)),
-            board.from_to(Square::at(3, 3), Square::at(7, 7)),
-            board.from_to(Square::at(3, 3), Square::at(2, 4)),
-            board.from_to_capture(Square::at(3, 3), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 5)),
-            board.from_to(Square::at(3, 3), Square::at(2, 2)),
-            board.from_to(Square::at(3, 3), Square::at(4, 2)),
-            board.from_to(Square::at(3, 3), Square::at(5, 1)),
-            board.from_to(Square::at(3, 3), Square::at(6, 0)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(4, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(5, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(7, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 3)),
+            TestMove::from_to_capture(&board,Square::at(3, 3), Square::at(1, 3), PieceKind::Pawn.colored(Color::Black).at(1, 3)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 4)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 2)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 1)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 0)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(4, 4)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(5, 5)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 6)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(7, 7)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 4)),
+            TestMove::from_to_capture(&board,Square::at(3, 3), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 5)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 2)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(4, 2)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(5, 1)),
+            TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 0)),
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn king_basic_moves() {
         // Freestanding King
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::King.colored(Color::White).at(3, 2), );
         let expected_moves = vec!(
-            board.from_to(Square::at(3, 2), Square::at(4, 2)),
-            board.from_to(Square::at(3, 2), Square::at(2, 2)),
-            board.from_to(Square::at(3, 2), Square::at(3, 3)),
-            board.from_to(Square::at(3, 2), Square::at(3, 1)),
-            board.from_to(Square::at(3, 2), Square::at(4, 3)),
-            board.from_to(Square::at(3, 2), Square::at(2, 3)),
-            board.from_to(Square::at(3, 2), Square::at(2, 1)),
-            board.from_to(Square::at(3, 2), Square::at(4, 1))
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(4, 2)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(2, 2)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(3, 3)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(3, 1)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(4, 3)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(2, 3)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(2, 1)),
+            TestMove::from_to(&board, Square::at(3, 2), Square::at(4, 1))
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
 
         // Blocked and capturing king at the edge of the board
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::King.colored(Color::White).at(3, 0),
             PieceKind::Dummy.colored(Color::White).at(4, 0),
             PieceKind::Pawn.colored(Color::Black).at(2, 1));
         let expected_moves = vec!(
-            board.from_to(Square::at(3, 0), Square::at(2, 0)),
-            board.from_to(Square::at(3, 0), Square::at(3, 1)),
-            board.from_to(Square::at(3, 0), Square::at(4, 1)),
-            board.from_to_capture(Square::at(3, 0), Square::at(2, 1), PieceKind::Pawn.colored(Color::Black).at(2, 1))
+            TestMove::from_to(&board, Square::at(3, 0), Square::at(2, 0)),
+            TestMove::from_to(&board, Square::at(3, 0), Square::at(3, 1)),
+            TestMove::from_to(&board, Square::at(3, 0), Square::at(4, 1)),
+            TestMove::from_to_capture(&board,Square::at(3, 0), Square::at(2, 1), PieceKind::Pawn.colored(Color::Black).at(2, 1))
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn king_castling_moves() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::King.colored(Color::White).at(3, 0),
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
 
         // No castle rights no castling
-        board.board.castle_rights = BoardCastleRights::none();
-        assert!(!generate_moves(&board.board).contains(&board.castling(Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board.board).contains(&board.castling(Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
+        board.castle_rights = BoardCastleRights::none();
+        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
 
         // Castle only where rights are granted
-        board.board.castle_rights = BoardCastleRights::none();
-        board.board.castle_rights.color_castle_rights[Color::White.index()].king_side = true;
-        assert!(generate_moves(&board.board).contains(&board.castling(Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board.board).contains(&board.castling(Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
-        board.board.castle_rights.color_castle_rights[Color::White.index()].queen_side = true;
-        assert!(generate_moves(&board.board).contains(&board.castling(Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
-        assert!(generate_moves(&board.board).contains(&board.castling(Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
+        board.castle_rights = BoardCastleRights::none();
+        board.castle_rights.color_castle_rights[Color::White.index()].king_side = true;
+        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
+        board.castle_rights.color_castle_rights[Color::White.index()].queen_side = true;
+        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
     }
 
     #[test]
     fn knight_moves() {
         // Freestanding and capturing knight
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Knight.colored(Color::White).at(3, 4),
             PieceKind::Pawn.colored(Color::Black).at(4, 3),
             PieceKind::Pawn.colored(Color::Black).at(4, 4),
             PieceKind::Pawn.colored(Color::Black).at(5, 3));
         let expected_moves = vec!(
-            board.from_to(Square::at(3, 4), Square::at(1, 3)),
-            board.from_to(Square::at(3, 4), Square::at(2, 2)),
-            board.from_to(Square::at(3, 4), Square::at(4, 2)),
-            board.from_to_capture(Square::at(3, 4), Square::at(5, 3), PieceKind::Pawn.colored(Color::Black).at(5, 3)),
-            board.from_to(Square::at(3, 4), Square::at(5, 5)),
-            board.from_to(Square::at(3, 4), Square::at(4, 6)),
-            board.from_to(Square::at(3, 4), Square::at(2, 6)),
-            board.from_to(Square::at(3, 4), Square::at(1, 5))
+            TestMove::from_to(&board, Square::at(3, 4), Square::at(1, 3)),
+            TestMove::from_to(&board, Square::at(3, 4), Square::at(2, 2)),
+            TestMove::from_to(&board, Square::at(3, 4), Square::at(4, 2)),
+            TestMove::from_to_capture(&board, Square::at(3, 4), Square::at(5, 3), PieceKind::Pawn.colored(Color::Black).at(5, 3)),
+            TestMove::from_to(&board, Square::at(3, 4), Square::at(5, 5)),
+            TestMove::from_to(&board, Square::at(3, 4), Square::at(4, 6)),
+            TestMove::from_to(&board, Square::at(3, 4), Square::at(2, 6)),
+            TestMove::from_to(&board, Square::at(3, 4), Square::at(1, 5))
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
 
         // Blocked knight at the edge of the board
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Knight.colored(Color::White).at(0, 7),
             PieceKind::Dummy.colored(Color::White).at(1, 5));
         let expected_moves = vec!(
-            board.from_to(Square::at(0, 7), Square::at(2, 6))
+            TestMove::from_to(&board, Square::at(0, 7), Square::at(2, 6))
         );
-        assert_eq!(generate_moves(&board.board), expected_moves);
+        assert_eq!(generate_moves(&board), expected_moves);
     }
 
     #[test]
     fn board_apply_and_revert_move() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1));
-        let mut move_ = board.from_to(Square::at(0, 1), Square::at(0, 2));
+        let mut move_ = TestMove::from_to(&board, Square::at(0, 1), Square::at(0, 2));
 
         // Apply the move
-        board.board.apply_move(move_);
+        board.apply_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.side = Color::Black;
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 2));
         assert_eq!(board, expected_board);
 
         // Revert the move
-        board.board.revert_move(move_);
+        board.revert_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1));
         assert_eq!(board, expected_board);
     }
 
     #[test]
     fn board_apply_and_revert_move_with_capture() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2));
 
-        let mut move_ = board.from_to_capture(Square::at(0, 1), Square::at(1, 2), PieceKind::Pawn.colored(Color::Black).at(1, 2));
+        let mut move_ = TestMove::from_to_capture(&board, Square::at(0, 1), Square::at(1, 2), PieceKind::Pawn.colored(Color::Black).at(1, 2));
 
 
         // Apply the move
-        board.board.apply_move(move_);
+        board.apply_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.side = Color::Black;
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 2));
 
         assert_eq!(board, expected_board);
 
         // Revert the move
-        board.board.revert_move(move_);
+        board.revert_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2));
 
@@ -1077,31 +1070,31 @@ mod tests {
 
     #[test]
     fn board_apply_and_revert_move_with_en_passant_square() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(2, 4));
-        let mut move_ = board.from_to(Square::at(2, 4), Square::at(2, 5));
+        let mut move_ = TestMove::from_to(&board, Square::at(2, 4), Square::at(2, 5));
         move_.en_passant_before = Some(Square::at(4, 2));
 
-        board.board.en_passant = Some(Square::at(4, 2));
+        board.en_passant = Some(Square::at(4, 2));
 
         // Apply the move
-        board.board.apply_move(move_);
+        board.apply_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.side = Color::Black;
-        expected_board.board.en_passant = None;
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.en_passant = None;
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(2, 5));
 
         assert_eq!(board, expected_board);
 
         // Revert the move
-        board.board.revert_move(move_);
+        board.revert_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.en_passant = Some(Square::at(4, 2));
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.en_passant = Some(Square::at(4, 2));
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(2, 4));
 
         assert_eq!(board, expected_board);
@@ -1109,28 +1102,28 @@ mod tests {
 
     #[test]
     fn board_apply_and_revert_move_with_en_passant_capture() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(1, 4),
             PieceKind::Pawn.colored(Color::White).at(2, 4));
-        let mut move_ = board.from_to_capture(Square::at(2, 4), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 4));
+        let mut move_ = TestMove::from_to_capture(&board, Square::at(2, 4), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 4));
 
 
         // Apply the move
-        board.board.apply_move(move_);
+        board.apply_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.side = Color::Black;
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 5));
 
         assert_eq!(board, expected_board);
 
         // Revert the move
-        board.board.revert_move(move_);
+        board.revert_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(2, 4),
             PieceKind::Pawn.colored(Color::Black).at(1, 4));
 
@@ -1139,26 +1132,26 @@ mod tests {
 
     #[test]
     fn board_apply_and_revert_move_with_promotion() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6));
-        let mut move_ = board.promotion(Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop);
+        let mut move_ = TestMove::promotion(&board, Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop);
 
         // Apply the move
-        board.board.apply_move(move_);
+        board.apply_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.side = Color::Black;
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.piece_list = vec!(
             PieceKind::Bishop.colored(Color::White).at(1, 7));
 
         assert_eq!(board, expected_board);
 
         // Revert the move
-        board.board.revert_move(move_);
+        board.revert_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6));
 
         assert_eq!(board, expected_board);
@@ -1166,28 +1159,28 @@ mod tests {
 
     #[test]
     fn board_apply_and_revert_move_with_capture_and_promotion() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6),
             PieceKind::Pawn.colored(Color::Black).at(2, 7));
-        let mut move_ = board.promotion_capture(Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop);
+        let mut move_ = TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop);
 
 
         // Apply the move
-        board.board.apply_move(move_);
+        board.apply_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.side = Color::Black;
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.piece_list = vec!(
             PieceKind::Bishop.colored(Color::White).at(2, 7));
 
         assert_eq!(board, expected_board);
 
         // Revert the move
-        board.board.revert_move(move_);
+        board.revert_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6),
             PieceKind::Pawn.colored(Color::Black).at(2, 7));
 
@@ -1196,34 +1189,34 @@ mod tests {
 
     #[test]
     fn board_apply_and_revert_castling() {
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::King.colored(Color::White).at(3, 0),
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
-        board.board.castle_rights = BoardCastleRights::all();
+        board.castle_rights = BoardCastleRights::all();
 
-        let mut move_ = board.castling(Square::at(3, 0), Square::at(1, 0), Castle::KingSide);
+        let mut move_ = TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide);
 
         // Apply the move
-        board.board.apply_move(move_);
+        board.apply_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.side = Color::Black;
-        expected_board.board.castle_rights.color_castle_rights[Color::White.index()] = ColorCastleRights::none();
-        expected_board.board.castle_rights.color_castle_rights[Color::Black.index()] = ColorCastleRights::all();
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.side = Color::Black;
+        expected_board.castle_rights.color_castle_rights[Color::White.index()] = ColorCastleRights::none();
+        expected_board.castle_rights.color_castle_rights[Color::Black.index()] = ColorCastleRights::all();
+        expected_board.piece_list = vec!(
             PieceKind::King.colored(Color::White).at(1, 0),
             PieceKind::Rook.colored(Color::White).at(2, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
         assert_eq!(board, expected_board);
 
         // Revert the move
-        board.board.revert_move(move_);
+        board.revert_move(move_);
 
-        let mut expected_board = TestBoard::create_empty();
-        expected_board.board.castle_rights = BoardCastleRights::all();
-        expected_board.board.piece_list = vec!(
+        let mut expected_board = Board::create_empty();
+        expected_board.castle_rights = BoardCastleRights::all();
+        expected_board.piece_list = vec!(
             PieceKind::King.colored(Color::White).at(3, 0),
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
@@ -1233,17 +1226,17 @@ mod tests {
 
     #[test]
     fn static_evaluation_basic() {
-        let mut board = TestBoard::create_empty();
+        let mut board = Board::create_empty();
 
-        board.board.piece_list = vec!(
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1));
-        assert_eq!(static_evaluation(&board.board), 1.0);
+        assert_eq!(static_evaluation(&board), 1.0);
 
-        board.board.piece_list = vec!(
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(0, 2),
             PieceKind::Pawn.colored(Color::Black).at(0, 3));
-        assert_eq!(static_evaluation(&board.board), -1.0);
+        assert_eq!(static_evaluation(&board), -1.0);
     }
 
     #[test]
@@ -1253,72 +1246,72 @@ mod tests {
         };
 
         // Just a white pawn
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1));
-        assert_eq!(minimax(&mut board.board, 3, 1.0), 1.0);
+        assert_eq!(minimax(&mut board, 3, 1.0), 1.0);
 
         // Just a black pawn
-        let mut board = TestBoard::create_empty();
-        board.board.side = Color::Black;
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(0, 6));
-        assert_eq!(minimax(&mut board.board, 3, -1.0), -1.0);
+        assert_eq!(minimax(&mut board, 3, -1.0), -1.0);
 
         // A white pawn that can capture a black pawn
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2));
-        assert_eq!(minimax(&mut board.board, 3, 1.0), 1.0);
+        assert_eq!(minimax(&mut board, 3, 1.0), 1.0);
 
         // A black pawn that can capture a white pawn
-        let mut board = TestBoard::create_empty();
-        board.board.side = Color::Black;
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 2),
             PieceKind::Pawn.colored(Color::Black).at(1, 3));
-        assert_eq!(minimax(&mut board.board, 3, -1.0), -1.0);
+        assert_eq!(minimax(&mut board, 3, -1.0), -1.0);
 
         // A white pawn that can capture a black pawn and another black pawn
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2),
             PieceKind::Pawn.colored(Color::Black).at(3, 2));
-        assert_eq!(minimax(&mut board.board, 3, 1.0), 0.0);
+        assert_eq!(minimax(&mut board, 3, 1.0), 0.0);
 
         // A white pawn that will be capture by a black pawn after it moves
-        let mut board = TestBoard::create_empty();
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 4),
             PieceKind::Pawn.colored(Color::Black).at(1, 6));
-        assert_eq!(minimax(&mut board.board, 3, 1.0), -1.0);
+        assert_eq!(minimax(&mut board, 3, 1.0), -1.0);
 
         // A white pawn that will capture a black pawn after the black pawn moves
-        let mut board = TestBoard::create_empty();
-        board.board.side = Color::Black;
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 3),
             PieceKind::Pawn.colored(Color::Black).at(1, 5));
-        assert_eq!(minimax(&mut board.board, 3, -1.0), 1.0);
+        assert_eq!(minimax(&mut board, 3, -1.0), 1.0);
 
         // A white pawn that will be captured by a black pawn after a couple of moves
-        let mut board = TestBoard::create_empty();
-        board.board.side = Color::Black;
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 2),
             PieceKind::Pawn.colored(Color::Black).at(1, 5), );
-        assert_eq!(minimax(&mut board.board, 10, -1.0), -1.0);
+        assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
 
         // ...
-        let mut board = TestBoard::create_empty();
-        board.board.side = Color::Black;
-        board.board.piece_list = vec!(
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 3),
             PieceKind::Pawn.colored(Color::White).at(1, 5),
             PieceKind::Pawn.colored(Color::Black).at(0, 6), );
-        assert_eq!(minimax(&mut board.board, 10, -1.0), -1.0);
+        assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
     }
 }
 
