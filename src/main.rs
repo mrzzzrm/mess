@@ -210,8 +210,8 @@ impl Move {
             PieceKind::King => ColorCastleRights { king_side: false, queen_side: false },
             PieceKind::Rook => {
                 ColorCastleRights {
-                    king_side: self.from.file() != 0 && self.castle_rights_before.test(Castle::KingSide),
-                    queen_side: self.from.file() != 7 && self.castle_rights_before.test(Castle::QueenSide),
+                    king_side: self.from.file() != 7 && self.castle_rights_before.test(Castle::KingSide),
+                    queen_side: self.from.file() != 0 && self.castle_rights_before.test(Castle::QueenSide),
                 }
             }
             _ => self.castle_rights_before
@@ -658,17 +658,17 @@ fn generate_moves(board: &Board) -> Vec<Move> {
 
                 // Generate King side castling
                 if board.castle_rights.get_rights(piece.color).test(Castle::KingSide) {
-                    if !board.has_piece_at(Square::at(1, piece.color.back_rank() as i8)) &&
-                        !board.has_piece_at(Square::at(2, piece.color.back_rank() as i8)) {
-                        moves.push(Move::castling(board, *square, Square::at(1, piece.color.back_rank() as i8), Castle::KingSide));
+                    if !board.has_piece_at(Square::at(5, piece.color.back_rank() as i8)) &&
+                        !board.has_piece_at(Square::at(6, piece.color.back_rank() as i8)) {
+                        moves.push(Move::castling(board, *square, Square::at(6, piece.color.back_rank() as i8), Castle::KingSide));
                     }
                 }
                 // Generate Queen side castling
                 if board.castle_rights.get_rights(piece.color).test(Castle::QueenSide) {
-                    if !board.has_piece_at(Square::at(4, piece.color.back_rank() as i8)) &&
-                        !board.has_piece_at(Square::at(5, piece.color.back_rank() as i8)) &&
-                        !board.has_piece_at(Square::at(6, piece.color.back_rank() as i8)) {
-                        moves.push(Move::castling(board, *square, Square::at(5, piece.color.back_rank() as i8), Castle::QueenSide));
+                    if !board.has_piece_at(Square::at(3, piece.color.back_rank() as i8)) &&
+                        !board.has_piece_at(Square::at(2, piece.color.back_rank() as i8)) &&
+                        !board.has_piece_at(Square::at(1, piece.color.back_rank() as i8)) {
+                        moves.push(Move::castling(board, *square, Square::at(2, piece.color.back_rank() as i8), Castle::QueenSide));
                     }
                 }
             }
@@ -971,23 +971,23 @@ mod tests {
     fn king_castling_moves() {
         let mut board = Board::create_empty();
         board.piece_list = vec!(
-            PieceKind::King.colored(Color::White).at(3, 0),
+            PieceKind::King.colored(Color::White).at(4, 0),
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
 
-        // No castle rights no castling
+        // No castle rights, no castling
         board.castle_rights = BoardCastleRights::none();
-        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
 
         // Castle only where rights are granted
         board.castle_rights = BoardCastleRights::none();
         board.castle_rights.white.king_side = true;
-        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
         board.castle_rights.white.queen_side = true;
-        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide)));
-        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(3, 0), Square::at(5, 0), Castle::QueenSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castling(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
     }
 
     #[test]
@@ -1240,7 +1240,7 @@ mod tests {
         board.castle_rights = BoardCastleRights::all();
         board.piece_list = vec!(
             PieceKind::Rook.colored(Color::White).at(0, 0),
-            PieceKind::King.colored(Color::White).at(3, 0),
+            PieceKind::King.colored(Color::White).at(4, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
 
         // Moving the king side Rook looses king side castle rights
@@ -1248,7 +1248,7 @@ mod tests {
 
         board.apply_move(move_);
         let mut expected_castle_rights = BoardCastleRights::all();
-        expected_castle_rights.white.king_side = false;
+        expected_castle_rights.white.queen_side = false;
         assert_eq!(board.castle_rights, expected_castle_rights);
 
         board.revert_move(move_);
@@ -1260,7 +1260,7 @@ mod tests {
 
         board.apply_move(move_);
         let mut expected_castle_rights = BoardCastleRights::all();
-        expected_castle_rights.white.queen_side = false;
+        expected_castle_rights.white.king_side = false;
         assert_eq!(board.castle_rights, expected_castle_rights);
 
         board.revert_move(move_);
@@ -1268,7 +1268,7 @@ mod tests {
         assert_eq!(board.castle_rights, expected_castle_rights);
 
         // Moving the King looses castle rights on both sides
-        let move_ = TestMove::from_to(&board, Square::at(3, 0), Square::at(3, 1));
+        let move_ = TestMove::from_to(&board, Square::at(4, 0), Square::at(3, 1));
 
         board.apply_move(move_);
         let mut expected_castle_rights = BoardCastleRights::all();
