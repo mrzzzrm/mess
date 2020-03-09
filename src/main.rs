@@ -3,7 +3,7 @@ extern crate num_traits;
 use num_traits::Float;
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Ord, Eq, PartialOrd, PartialEq)]
 struct Square {
     x: i8,
     y: i8,
@@ -31,13 +31,19 @@ impl Square {
     }
 }
 
+impl std::fmt::Debug for Square {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.file(), self.rank())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Castle {
     KingSide,
     QueenSide,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Ord, Eq, PartialOrd, PartialEq)]
 enum Color {
     White,
     Black,
@@ -74,7 +80,7 @@ impl Color {
             Color::Black => 0
         }
     }
-    fn back_rank(&self) -> u8 {
+    fn back_rank(&self) -> i8 {
         match self {
             Color::White => 0,
             Color::Black => 7
@@ -82,7 +88,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq)]
 enum PieceKind {
     Pawn,
     Knight,
@@ -123,7 +129,7 @@ impl PieceKind {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialOrd, PartialEq, Ord, Eq)]
 struct Piece {
     kind: PieceKind,
     color: Color,
@@ -139,6 +145,18 @@ impl Piece {
 
     fn value(&self) -> f32 {
         self.kind.value() * self.color.evaluation_sign()
+    }
+}
+
+impl std::fmt::Debug for Piece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut token = self.kind.token();
+
+        if self.color == Color::White {
+            token = token.to_uppercase().to_string().chars().nth(0).unwrap();
+        }
+
+        write!(f, "{}", token.to_string())
     }
 }
 
@@ -158,8 +176,15 @@ struct Move {
 }
 
 impl Move {
-    fn castle(board: &Board, from: Square, to: Square, castle: Castle) -> Move {
-        let mut m = Move::from_to(board, PieceKind::King, from, to);
+    fn castle(board: &Board, color: Color, castle: Castle) -> Move {
+        let file = match castle {
+            Castle::KingSide => 6,
+            Castle::QueenSide => 2,
+        };
+
+        let rank = color.back_rank();
+
+        let mut m = Move::from_to(board, PieceKind::King, Square::at(4, rank), Square::at(file, rank));
         m.castle = Some(castle);
 
         return m;
@@ -205,17 +230,31 @@ impl Move {
         return m;
     }
 
-    fn castle_rights_after(&self) -> ColorCastleRights {
+    fn castle_rights_after(&self, side: Color) -> ColorCastleRights {
         return match self.piece_kind {
             PieceKind::King => ColorCastleRights { king_side: false, queen_side: false },
             PieceKind::Rook => {
                 ColorCastleRights {
-                    king_side: self.from.file() != 7 && self.castle_rights_before.test(Castle::KingSide),
-                    queen_side: self.from.file() != 0 && self.castle_rights_before.test(Castle::QueenSide),
+                    king_side: self.from != Square::at(7, side.back_rank()) && self.castle_rights_before.test(Castle::KingSide),
+                    queen_side: self.from != Square::at(0, side.back_rank()) && self.castle_rights_before.test(Castle::QueenSide),
                 }
             }
             _ => self.castle_rights_before
         };
+    }
+
+    // Create the move a Rook makes during castling
+    fn rook_castle(board: &Board, castle: Castle, rank: i8) -> Move {
+        assert!(rank == 0 || rank == 7);
+
+        return match castle {
+            Castle::KingSide => {
+                Move::from_to(board, PieceKind::Rook, Square::at(7, rank), Square::at(5, rank))
+            }
+            Castle::QueenSide => {
+                Move::from_to(board, PieceKind::Rook, Square::at(0, rank), Square::at(3, rank))
+            }
+        }
     }
 }
 
@@ -249,14 +288,14 @@ impl ColorCastleRights {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct BoardCastleRights {
     white: ColorCastleRights,
-    black: ColorCastleRights
+    black: ColorCastleRights,
 }
 
 impl BoardCastleRights {
     fn all() -> BoardCastleRights {
         BoardCastleRights {
             white: ColorCastleRights::all(),
-            black: ColorCastleRights::all()
+            black: ColorCastleRights::all(),
         }
     }
 
@@ -282,7 +321,7 @@ impl BoardCastleRights {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Board {
     piece_list: Vec<PieceOnBoard>,
     side: Color,
@@ -337,75 +376,76 @@ impl Board {
         return None;
     }
 
+    fn piece_at_mut(&mut self, square: Square) -> &mut PieceOnBoard {
+        for piece_on_board in self.piece_list.iter_mut() {
+            if square == piece_on_board.1 {
+                return piece_on_board;
+            }
+        }
+        panic!("No piece found on {:?}", square);
+    }
+
     fn has_piece_at(&self, square: Square) -> bool {
         self.piece_list.iter().position(|(_, square2)| square == *square2).is_some()
     }
 
     fn apply_move_impl(&mut self, m: Move) {
-        match m.castle {
-            Some(Castle::KingSide) => {
-                self.apply_move_impl(Move::from_to(self, PieceKind::Rook, Square::at(0, m.from.rank()), Square::at(2, m.from.rank())));
-            }
-            Some(Castle::QueenSide) => {
-                self.apply_move_impl(Move::from_to(self, PieceKind::Rook, Square::at(7, m.from.rank()), Square::at(4, m.from.rank())));
-            }
-            None => {}
+        assert_eq!(self.piece_at(m.from).unwrap().kind, m.piece_kind);
+
+        if let Some(castle) = m.castle {
+            self.apply_move_impl(Move::rook_castle(self, castle, m.from.rank()));
         }
 
-        for t in self.piece_list.iter_mut() {
-            if t.1 == m.from {
-                t.1 = m.to;
-                if let Some(promotion) = m.promotion {
-                    t.0.kind = promotion;
-                }
-
-                return;
-            }
+        let piece_on_board = self.piece_at_mut(m.from);
+        if let Some(promotion) = m.promotion {
+            piece_on_board.0.kind = promotion;
         }
+        piece_on_board.1 = m.to;
 
-        panic!("{:?} not found", m.from);
     }
 
     fn apply_move(&mut self, m: Move) {
         assert_eq!(m.en_passant_before, self.en_passant);
 
+        // Capture the piece on the target square, if any
         if let Some(capture) = m.capture {
             let pos = self.piece_list.iter().position(|&x| x.1 == capture.1).unwrap();
+            assert_eq!(capture, self.piece_list[pos]);
             self.piece_list.remove(pos);
+        } else {
+            assert!(!self.has_piece_at(m.to));
         }
 
         self.apply_move_impl(m);
         self.en_passant = m.en_passant_after;
-        self.castle_rights.set_rights(self.side, &m.castle_rights_after());
+        self.castle_rights.set_rights(self.side, &m.castle_rights_after(self.side));
         self.side = self.side.switch();
     }
 
     fn revert_move_impl(&mut self, m: Move) {
-        match m.castle {
-            Some(Castle::KingSide) => {
-                self.revert_move_impl(Move::from_to(self, PieceKind::Rook, Square::at(0, m.from.rank()), Square::at(2, m.from.rank())));
-            }
-            Some(Castle::QueenSide) => {
-                self.revert_move_impl(Move::from_to(self, PieceKind::Rook, Square::at(7, m.from.rank()), Square::at(4, m.from.rank())));
-            }
-            None => {}
+        if let Some(promotion) = m.promotion {
+            assert_eq!(self.piece_at(m.to).unwrap().kind, promotion);
+        } else {
+            assert_eq!(self.piece_at(m.to).unwrap().kind, m.piece_kind);
         }
 
-        for t in self.piece_list.iter_mut() {
-            if t.1 == m.to {
-                if let Some(promotion) = m.promotion {
-                    t.0.kind = PieceKind::Pawn;
-                }
-
-                t.1 = m.from;
-            }
+        if let Some(castle) = m.castle {
+            self.revert_move_impl(Move::rook_castle(self, castle, m.from.rank()));
         }
+
+        let piece_on_board = self.piece_at_mut(m.to);
+        if let Some(promotion) = m.promotion {
+            piece_on_board.0.kind = PieceKind::Pawn;
+        }
+        piece_on_board.1 = m.from;
     }
 
     fn revert_move(&mut self, m: Move) {
         self.revert_move_impl(m);
 
+        // Revert capture, if any
         if let Some(capture) = m.capture {
+            assert!(!self.has_piece_at(capture.1));
             self.piece_list.push(capture);
         }
 
@@ -443,6 +483,19 @@ impl Board {
             }
             println!();
         }
+    }
+
+    fn semantic_eq(&self, other: &Self) -> bool {
+        if self.side != other.side || self.en_passant != other.en_passant || self.castle_rights != other.castle_rights {
+            return false;
+        }
+
+        let mut self_sorted = self.piece_list.clone();
+        self_sorted.sort();
+        let mut other_sorted = other.piece_list.clone();
+        other_sorted.sort();
+
+        return self_sorted == other_sorted;
     }
 }
 
@@ -498,11 +551,9 @@ impl MinimaxEvaluator {
         let mut best_move_evaluation = None;
 
         for m in moves.iter() {
-            board.apply_move(*m);
-
+            let mut move_unmove = MoveUnmove::apply_move(board, m);
             let evaluation = self.minimax(board, depth - 1, neg * -1.0) * neg;
-
-            board.revert_move(*m);
+            move_unmove.revert_move(board);
 
             if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
                 best_move_evaluation = Some(evaluation);
@@ -522,6 +573,101 @@ impl DynamicEvaluator for MinimaxEvaluator {
 
         let stopwatch = std::time::Instant::now();
         let evaluation = self.minimax(board, depth, neg) * neg;
+        self.statistics.duration += stopwatch.elapsed();
+
+        return evaluation;
+    }
+
+    fn get_statistics(&self) -> DynamicEvaluatorStatistics {
+        self.statistics
+    }
+}
+
+struct AlphaBetaEvaluator {
+    statistics: DynamicEvaluatorStatistics
+}
+
+impl AlphaBetaEvaluator {
+    fn create() -> AlphaBetaEvaluator {
+        AlphaBetaEvaluator { statistics: DynamicEvaluatorStatistics::create() }
+    }
+
+    fn alpha_beta_min(&mut self, board: &mut Board, mut alpha: f32, mut beta: f32, depth: u32) -> f32 {
+        self.statistics.node_count += 1;
+        if depth == 0 {
+            return static_evaluation(&board);
+        }
+
+        let mut moves = generate_moves(&board);
+        if moves.is_empty() {
+            return static_evaluation(&board);
+        }
+
+        let mut best_move_evaluation = None;
+
+        for m in moves.iter() {
+            let mut move_unmove = MoveUnmove::apply_move(board, m);
+            let evaluation = self.alpha_beta_max(board, alpha, beta, depth - 1);
+            move_unmove.revert_move(board);
+
+            if evaluation <= alpha {
+                return evaluation;
+            }
+
+            if evaluation < beta {
+                beta = evaluation;
+            }
+
+            if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
+                best_move_evaluation = Some(evaluation);
+            }
+        }
+
+        return best_move_evaluation.unwrap();
+    }
+
+    fn alpha_beta_max(&mut self, board: &mut Board, mut alpha: f32, mut beta: f32, depth: u32) -> f32 {
+        self.statistics.node_count += 1;
+        if depth == 0 {
+            return static_evaluation(&board);
+        }
+
+        let mut moves = generate_moves(&board);
+        if moves.is_empty() {
+            return static_evaluation(&board);
+        }
+
+        let mut best_move_evaluation = None;
+
+        for m in moves.iter() {
+            let mut move_unmove = MoveUnmove::apply_move(board, m);
+            let evaluation = self.alpha_beta_min(board, alpha, beta, depth - 1);
+            move_unmove.revert_move(board);
+
+            if evaluation >= beta {
+                return evaluation;
+            }
+
+            if evaluation > alpha {
+                alpha = evaluation;
+            }
+
+            if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
+                best_move_evaluation = Some(evaluation);
+            }
+        }
+
+        return best_move_evaluation.unwrap();
+    }
+}
+
+impl DynamicEvaluator for AlphaBetaEvaluator {
+    fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32 {
+        let stopwatch = std::time::Instant::now();
+        let evaluation = match board.side {
+            Color::White => self.alpha_beta_max(board, num_traits::float::Float::min_value(), num_traits::float::Float::max_value(), depth),
+            Color::Black => self.alpha_beta_min(board, num_traits::float::Float::min_value(), num_traits::float::Float::max_value(), depth)
+        };
         self.statistics.duration += stopwatch.elapsed();
 
         return evaluation;
@@ -660,7 +806,7 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                 if board.castle_rights.get_rights(piece.color).test(Castle::KingSide) {
                     if !board.has_piece_at(Square::at(5, piece.color.back_rank() as i8)) &&
                         !board.has_piece_at(Square::at(6, piece.color.back_rank() as i8)) {
-                        moves.push(Move::castle(board, *square, Square::at(6, piece.color.back_rank() as i8), Castle::KingSide));
+                        moves.push(Move::castle(board, piece.color, Castle::KingSide));
                     }
                 }
                 // Generate Queen side castle
@@ -668,7 +814,7 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                     if !board.has_piece_at(Square::at(3, piece.color.back_rank() as i8)) &&
                         !board.has_piece_at(Square::at(2, piece.color.back_rank() as i8)) &&
                         !board.has_piece_at(Square::at(1, piece.color.back_rank() as i8)) {
-                        moves.push(Move::castle(board, *square, Square::at(2, piece.color.back_rank() as i8), Castle::QueenSide));
+                        moves.push(Move::castle(board, piece.color, Castle::QueenSide));
                     }
                 }
             }
@@ -684,20 +830,45 @@ fn generate_moves(board: &Board) -> Vec<Move> {
     return moves;
 }
 
+struct MoveUnmove {
+    board_before: Board,
+    move_: Move,
+}
+
+impl MoveUnmove {
+    fn apply_move(board: &mut Board, move_: &Move) -> MoveUnmove {
+        let move_unmove = MoveUnmove {
+            board_before: board.clone(),
+            move_: *move_,
+        };
+        board.apply_move(*move_);
+        return move_unmove;
+    }
+
+    fn revert_move(&mut self, board: &mut Board) {
+        board.revert_move(self.move_);
+
+        // if !board.semantic_eq(&self.board_before) {
+        //     panic!("Board mismatch after {:?}\n{:?}\nvs\n{:?}", self.move_, self.board_before, board);
+        // }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     struct TestMove {}
-    
+
     impl TestMove {
         // Wrapper around Move::from_to() that performs a lookup of the PieceKind
         fn from_to(board: &Board, from: Square, to: Square) -> Move {
             Move::from_to(board, board.piece_at(from).unwrap().kind, from, to)
         }
 
-        fn castle(board: &Board, from: Square, to: Square, castle: Castle) -> Move {
-            Move::castle(board, from, to, castle)
+        fn castle(board: &Board, color: Color, castle: Castle) -> Move {
+            Move::castle(board, color, castle)
         }
 
         fn promotion(board: &Board, from: Square, to: Square, promotion: PieceKind) -> Move {
@@ -915,7 +1086,7 @@ mod tests {
             TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 3)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(7, 3)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 3)),
-            TestMove::from_to_capture(&board,Square::at(3, 3), Square::at(1, 3), PieceKind::Pawn.colored(Color::Black).at(1, 3)),
+            TestMove::from_to_capture(&board, Square::at(3, 3), Square::at(1, 3), PieceKind::Pawn.colored(Color::Black).at(1, 3)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 4)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 2)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(3, 1)),
@@ -925,7 +1096,7 @@ mod tests {
             TestMove::from_to(&board, Square::at(3, 3), Square::at(6, 6)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(7, 7)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 4)),
-            TestMove::from_to_capture(&board,Square::at(3, 3), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 5)),
+            TestMove::from_to_capture(&board, Square::at(3, 3), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 5)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(2, 2)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(4, 2)),
             TestMove::from_to(&board, Square::at(3, 3), Square::at(5, 1)),
@@ -962,7 +1133,7 @@ mod tests {
             TestMove::from_to(&board, Square::at(3, 0), Square::at(2, 0)),
             TestMove::from_to(&board, Square::at(3, 0), Square::at(3, 1)),
             TestMove::from_to(&board, Square::at(3, 0), Square::at(4, 1)),
-            TestMove::from_to_capture(&board,Square::at(3, 0), Square::at(2, 1), PieceKind::Pawn.colored(Color::Black).at(2, 1))
+            TestMove::from_to_capture(&board, Square::at(3, 0), Square::at(2, 1), PieceKind::Pawn.colored(Color::Black).at(2, 1))
         );
         assert_eq!(generate_moves(&board), expected_moves);
     }
@@ -977,17 +1148,50 @@ mod tests {
 
         // No castle rights, no castle
         board.castle_rights = BoardCastleRights::none();
-        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::QueenSide)));
 
         // Castle only where rights are granted
         board.castle_rights = BoardCastleRights::none();
         board.castle_rights.white.king_side = true;
-        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
-        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::QueenSide)));
         board.castle_rights.white.queen_side = true;
-        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(6, 0), Castle::KingSide)));
-        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Square::at(4, 0), Square::at(2, 0), Castle::QueenSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::KingSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::QueenSide)));
+
+        // If all castle rights for both side are granted, then castle
+        board.castle_rights = BoardCastleRights::all();
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::KingSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::White, Castle::QueenSide)));
+    }
+
+    #[test]
+    fn king_castling_moves_blocked() {
+        let mut original_board = Board::create_empty();
+        original_board.piece_list = vec!(
+            PieceKind::King.colored(Color::Black).at(4, 7),
+            PieceKind::Rook.colored(Color::Black).at(0, 7),
+            PieceKind::Rook.colored(Color::Black).at(7, 7));
+        original_board.side = Color::Black;
+        original_board.castle_rights = BoardCastleRights::all();
+
+        // No blockers added yet, we can still castle
+        let mut board = original_board.clone();
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::Black, Castle::KingSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::Black, Castle::QueenSide)));
+
+        // Blocker on the queen side, not on the king side
+        let mut board = original_board.clone();
+        board.piece_list.push(PieceKind::Dummy.colored(Color::Black).at(1, 7));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::Black, Castle::KingSide)));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Color::Black, Castle::QueenSide)));
+
+        // Blocker on the king side, not on the queen side
+        let mut board = original_board.clone();
+        board.piece_list.push(PieceKind::Dummy.colored(Color::White).at(5, 7));
+        assert!(!generate_moves(&board).contains(&TestMove::castle(&board, Color::Black, Castle::KingSide)));
+        assert!(generate_moves(&board).contains(&TestMove::castle(&board, Color::Black, Castle::QueenSide)));
     }
 
     #[test]
@@ -1028,6 +1232,7 @@ mod tests {
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1));
         let mut move_ = TestMove::from_to(&board, Square::at(0, 1), Square::at(0, 2));
+        let original_board = board.clone();
 
         // Apply the move
         board.apply_move(move_);
@@ -1040,11 +1245,7 @@ mod tests {
 
         // Revert the move
         board.revert_move(move_);
-
-        let mut expected_board = Board::create_empty();
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(0, 1));
-        assert_eq!(board, expected_board);
+        assert_eq!(board, original_board);
     }
 
     #[test]
@@ -1053,6 +1254,7 @@ mod tests {
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2));
+        let original_board = board.clone();
 
         let mut move_ = TestMove::from_to_capture(&board, Square::at(0, 1), Square::at(1, 2), PieceKind::Pawn.colored(Color::Black).at(1, 2));
 
@@ -1069,13 +1271,7 @@ mod tests {
 
         // Revert the move
         board.revert_move(move_);
-
-        let mut expected_board = Board::create_empty();
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(0, 1),
-            PieceKind::Pawn.colored(Color::Black).at(1, 2));
-
-        assert_eq!(board, expected_board);
+        assert_eq!(board, original_board);
     }
 
     #[test]
@@ -1083,10 +1279,11 @@ mod tests {
         let mut board = Board::create_empty();
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(2, 4));
-        let mut move_ = TestMove::from_to(&board, Square::at(2, 4), Square::at(2, 5));
-        move_.en_passant_before = Some(Square::at(4, 2));
-
         board.en_passant = Some(Square::at(4, 2));
+
+        let original_board = board.clone();
+
+        let mut move_ = TestMove::from_to(&board, Square::at(2, 4), Square::at(2, 5));
 
         // Apply the move
         board.apply_move(move_);
@@ -1101,13 +1298,7 @@ mod tests {
 
         // Revert the move
         board.revert_move(move_);
-
-        let mut expected_board = Board::create_empty();
-        expected_board.en_passant = Some(Square::at(4, 2));
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(2, 4));
-
-        assert_eq!(board, expected_board);
+        assert!(board.semantic_eq(&original_board));
     }
 
     #[test]
@@ -1116,8 +1307,9 @@ mod tests {
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(1, 4),
             PieceKind::Pawn.colored(Color::White).at(2, 4));
-        let mut move_ = TestMove::from_to_capture(&board, Square::at(2, 4), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 4));
+        let original_board = board.clone();
 
+        let mut move_ = TestMove::from_to_capture(&board, Square::at(2, 4), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 4));
 
         // Apply the move
         board.apply_move(move_);
@@ -1131,13 +1323,7 @@ mod tests {
 
         // Revert the move
         board.revert_move(move_);
-
-        let mut expected_board = Board::create_empty();
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(2, 4),
-            PieceKind::Pawn.colored(Color::Black).at(1, 4));
-
-        assert_eq!(board, expected_board);
+        assert!(board.semantic_eq(&original_board));
     }
 
     #[test]
@@ -1145,6 +1331,8 @@ mod tests {
         let mut board = Board::create_empty();
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6));
+        let original_board = board.clone();
+
         let mut move_ = TestMove::promotion(&board, Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop);
 
         // Apply the move
@@ -1159,12 +1347,7 @@ mod tests {
 
         // Revert the move
         board.revert_move(move_);
-
-        let mut expected_board = Board::create_empty();
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(1, 6));
-
-        assert_eq!(board, expected_board);
+        assert_eq!(board, original_board);
     }
 
     #[test]
@@ -1173,8 +1356,9 @@ mod tests {
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6),
             PieceKind::Pawn.colored(Color::Black).at(2, 7));
-        let mut move_ = TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop);
+        let original_board = board.clone();
 
+        let mut move_ = TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop);
 
         // Apply the move
         board.apply_move(move_);
@@ -1188,25 +1372,20 @@ mod tests {
 
         // Revert the move
         board.revert_move(move_);
-
-        let mut expected_board = Board::create_empty();
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(1, 6),
-            PieceKind::Pawn.colored(Color::Black).at(2, 7));
-
-        assert_eq!(board, expected_board);
+        assert_eq!(board, original_board);
     }
 
     #[test]
-    fn board_apply_and_revert_castling() {
+    fn board_apply_and_revert_king_side_castling() {
         let mut board = Board::create_empty();
         board.piece_list = vec!(
-            PieceKind::King.colored(Color::White).at(3, 0),
+            PieceKind::King.colored(Color::White).at(4, 0),
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
         board.castle_rights = BoardCastleRights::all();
+        let original_board = board.clone();
 
-        let mut move_ = TestMove::castle(&board, Square::at(3, 0), Square::at(1, 0), Castle::KingSide);
+        let mut move_ = TestMove::castle(&board, Color::White, Castle::KingSide);
 
         // Apply the move
         board.apply_move(move_);
@@ -1216,34 +1395,57 @@ mod tests {
         expected_board.castle_rights.white = ColorCastleRights::none();
         expected_board.castle_rights.black = ColorCastleRights::all();
         expected_board.piece_list = vec!(
-            PieceKind::King.colored(Color::White).at(1, 0),
-            PieceKind::Rook.colored(Color::White).at(2, 0),
-            PieceKind::Rook.colored(Color::White).at(7, 0));
+            PieceKind::King.colored(Color::White).at(6, 0),
+            PieceKind::Rook.colored(Color::White).at(0, 0),
+            PieceKind::Rook.colored(Color::White).at(5, 0));
         assert_eq!(board, expected_board);
 
         // Revert the move
         board.revert_move(move_);
-
-        let mut expected_board = Board::create_empty();
-        expected_board.castle_rights = BoardCastleRights::all();
-        expected_board.piece_list = vec!(
-            PieceKind::King.colored(Color::White).at(3, 0),
-            PieceKind::Rook.colored(Color::White).at(0, 0),
-            PieceKind::Rook.colored(Color::White).at(7, 0));
-
-        assert_eq!(board, expected_board);
+        assert_eq!(board, original_board);
     }
 
     #[test]
-    fn board_apply_and_revert_castle_rights_loss() {
+    fn board_apply_and_revert_queen_side_castling() {
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec!(
+            PieceKind::King.colored(Color::Black).at(4, 7),
+            PieceKind::Rook.colored(Color::Black).at(0, 7),
+            PieceKind::Rook.colored(Color::Black).at(7, 7));
+        board.castle_rights = BoardCastleRights::all();
+        let original_board = board.clone();
+
+        let mut move_ = TestMove::castle(&board, Color::Black, Castle::QueenSide);
+
+        // Apply the move
+        board.apply_move(move_);
+
+        let mut expected_board = Board::create_empty();
+        expected_board.castle_rights.white = ColorCastleRights::all();
+        expected_board.castle_rights.black = ColorCastleRights::none();
+        expected_board.piece_list = vec!(
+            PieceKind::King.colored(Color::Black).at(2, 7),
+            PieceKind::Rook.colored(Color::Black).at(3, 7),
+            PieceKind::Rook.colored(Color::Black).at(7, 7));
+        assert_eq!(board, expected_board);
+
+        // Revert the move
+        board.revert_move(move_);
+        assert_eq!(board, original_board);
+    }
+
+    #[test]
+    fn board_apply_and_revert_castle_rights_loss_through_normal_move() {
         let mut board = Board::create_empty();
         board.castle_rights = BoardCastleRights::all();
         board.piece_list = vec!(
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::King.colored(Color::White).at(4, 0),
             PieceKind::Rook.colored(Color::White).at(7, 0));
+        let original_board = board.clone();
 
-        // Moving the king side Rook looses king side castle rights
+        // Moving the king-side Rook looses queen side castle rights
         let move_ = TestMove::from_to(&board, Square::at(0, 0), Square::at(0, 1));
 
         board.apply_move(move_);
@@ -1255,7 +1457,7 @@ mod tests {
         let mut expected_castle_rights = BoardCastleRights::all();
         assert_eq!(board.castle_rights, expected_castle_rights);
 
-        // Moving the queen side Rook looses queen side castle rights
+        // Moving the queen-side Rook looses king side castle rights
         let move_ = TestMove::from_to(&board, Square::at(7, 0), Square::at(7, 1));
 
         board.apply_move(move_);
@@ -1278,6 +1480,43 @@ mod tests {
         board.revert_move(move_);
         let mut expected_castle_rights = BoardCastleRights::all();
         assert_eq!(board.castle_rights, expected_castle_rights);
+    }
+
+    #[test]
+    fn board_apply_and_revert_no_castle_rights() {
+        // Test that with no castle rights to begin with, reverting a move that would loose castle
+        // rights doesn't accidentally grant them.
+
+        let mut board = Board::create_empty();
+        board.castle_rights = BoardCastleRights::none();
+        board.piece_list = vec!(
+            PieceKind::Rook.colored(Color::White).at(0, 0),
+            PieceKind::King.colored(Color::White).at(4, 0),
+            PieceKind::Rook.colored(Color::White).at(7, 0));
+
+        // Moving the king-side Rook
+        let move_ = TestMove::from_to(&board, Square::at(0, 0), Square::at(0, 1));
+        board.apply_move(move_);
+        assert_eq!(board.castle_rights, BoardCastleRights::none());
+
+        board.revert_move(move_);
+        assert_eq!(board.castle_rights, BoardCastleRights::none());
+
+        // Moving the queen-side Rook looses king side castle rights
+        let move_ = TestMove::from_to(&board, Square::at(7, 0), Square::at(7, 1));
+        board.apply_move(move_);
+        assert_eq!(board.castle_rights, BoardCastleRights::none());
+
+        board.revert_move(move_);
+        assert_eq!(board.castle_rights, BoardCastleRights::none());
+
+        // Moving the King looses castle rights on both sides
+        let move_ = TestMove::from_to(&board, Square::at(4, 0), Square::at(3, 1));
+        board.apply_move(move_);
+        assert_eq!(board.castle_rights, BoardCastleRights::none());
+
+        board.revert_move(move_);
+        assert_eq!(board.castle_rights, BoardCastleRights::none());
     }
 
     #[test]
@@ -1374,10 +1613,10 @@ mod tests {
 fn play(board: &mut Board) {
     let mut num_moves = 0;
 
-    let max_depth = 4;
+    let max_depth = 7;
 
     loop {
-        let mut evaluator = MinimaxEvaluator::create();
+        let mut evaluator = AlphaBetaEvaluator::create();
         let d = evaluator.evaluate(board, max_depth);
         println!("{:?}'s turn, static evaluation is {}, dynamic evaluation is {}", board.side, static_evaluation(&board), d);
         board.print();
@@ -1398,12 +1637,12 @@ fn play(board: &mut Board) {
             Color::Black => -1.0
         };
 
-        let mut evaluator = MinimaxEvaluator::create();
+        let mut evaluator = AlphaBetaEvaluator::create();
 
         for move_ in moves.iter() {
-            board.apply_move(*move_);
+            let mut move_unmove = MoveUnmove::apply_move(board, move_);
             let evaluation = evaluator.evaluate(board, max_depth) * neg;
-            board.revert_move(*move_);
+            move_unmove.revert_move(board);
 
             //println!("Evaluating {:?} with {}", move_, evaluation * neg);
             if evaluation > best_move_evaluation {
@@ -1415,7 +1654,7 @@ fn play(board: &mut Board) {
         let nodes_per_second = evaluator.statistics.node_count as f32 / evaluator.statistics.duration.as_secs_f32();
         let best_move = best_move.unwrap();
 
-        println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes/s", best_move, best_move_evaluation * neg, nodes_per_second);
+        println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes at {} nodes/s", best_move, best_move_evaluation * neg, evaluator.statistics.node_count, nodes_per_second);
 
         board.apply_move(*best_move);
 
