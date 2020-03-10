@@ -2,6 +2,7 @@ extern crate num_traits;
 
 use num_traits::Float;
 use std::time::{Duration, Instant};
+use std::string::String;
 
 #[derive(Clone, Copy, Ord, Eq, PartialOrd, PartialEq)]
 struct Square {
@@ -28,6 +29,11 @@ impl Square {
 
     fn delta(&self, x: i8, y: i8) -> Square {
         Square { x: self.x + x, y: self.y + y }
+    }
+
+    fn algebraic(&self) -> String {
+        assert!(self.is_on_board());
+        format!("{}{}", ('a' as u8 + self.x as u8) as char, self.y)
     }
 }
 
@@ -169,7 +175,7 @@ struct Move {
     en_passant_before: Option<Square>,
     en_passant_after: Option<Square>,
 
-    castle_rights_before: ColorCastleRights,
+    castle_rights_before: BoardCastleRights,
 
     castle: Option<Castle>,
     promotion: Option<PieceKind>,
@@ -211,7 +217,7 @@ impl Move {
             capture: None,
             en_passant_before: board.en_passant,
             en_passant_after: None,
-            castle_rights_before: board.castle_rights.get_rights(board.side),
+            castle_rights_before: board.castle_rights,
             castle: None,
             promotion: None,
         }
@@ -230,17 +236,35 @@ impl Move {
         return m;
     }
 
-    fn castle_rights_after(&self, side: Color) -> ColorCastleRights {
-        return match self.piece_kind {
-            PieceKind::King => ColorCastleRights { king_side: false, queen_side: false },
+    fn castle_rights_after(&self, side: Color) -> BoardCastleRights {
+        let mut rights = self.castle_rights_before;
+        let other_side = side.switch();
+
+        match self.piece_kind {
+            PieceKind::King => {
+                rights.set_rights(side, &ColorCastleRights::none());
+            }
             PieceKind::Rook => {
-                ColorCastleRights {
-                    king_side: self.from != Square::at(7, side.back_rank()) && self.castle_rights_before.test(Castle::KingSide),
-                    queen_side: self.from != Square::at(0, side.back_rank()) && self.castle_rights_before.test(Castle::QueenSide),
+                if self.from == Square::at(7, side.back_rank()) {
+                    rights.get_rights_mut(side).king_side = false;
+                }
+                if self.from == Square::at(0, side.back_rank()) {
+                    rights.get_rights_mut(side).queen_side = false;
                 }
             }
-            _ => self.castle_rights_before
-        };
+            _ => {}
+        }
+
+        if let Some(capture) = self.capture {
+            if capture.1 == Square::at(7, other_side.back_rank()) {
+                rights.get_rights_mut(other_side).king_side = false;
+            }
+            if capture.1 == Square::at(0, other_side.back_rank()) {
+                rights.get_rights_mut(other_side).queen_side = false;
+            }
+        }
+
+        return rights;
     }
 
     // Create the move a Rook makes during castling
@@ -254,7 +278,29 @@ impl Move {
             Castle::QueenSide => {
                 Move::from_to(board, PieceKind::Rook, Square::at(0, rank), Square::at(3, rank))
             }
-        }
+        };
+    }
+
+    fn long_algebraic(&self) -> String {
+        format!("{}{}{}", self.from.algebraic(), "-", self.to.algebraic())
+    }
+}
+
+struct Line {
+    moves: Vec<Move>
+}
+
+impl Line {
+    fn new() -> Line {
+        Line{moves: Vec::new()}
+    }
+
+    fn from_moves(moves: Vec<Move>) -> Line {
+        Line{moves: moves}
+    }
+
+    fn to_string(&self) -> String {
+        self.moves.iter().map(|m| m.long_algebraic()).collect::<Vec<String>>().join(" ")
     }
 }
 
@@ -313,6 +359,13 @@ impl BoardCastleRights {
         }
     }
 
+    fn get_rights_mut(&mut self, color: Color) -> &mut ColorCastleRights {
+        match color {
+            Color::White => &mut self.white,
+            Color::Black => &mut self.black,
+        }
+    }
+
     fn set_rights(&mut self, color: Color, rights: &ColorCastleRights) {
         match color {
             Color::White => self.white = *rights,
@@ -367,6 +420,30 @@ impl Board {
         return board;
     }
 
+    fn create_king_rooks() -> Board {
+        let mut board = Board::create_empty();
+        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(0, 0));
+        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(7, 0));
+        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(0, 7));
+        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(7, 7));
+        board.piece_list.push(PieceKind::King.colored(Color::White).at(4, 0));
+        board.piece_list.push(PieceKind::King.colored(Color::Black).at(4, 7));
+
+        board.castle_rights = BoardCastleRights::all();
+
+        return board;
+    }
+
+    fn create_rooks() -> Board {
+        let mut board = Board::create_empty();
+        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(7, 0));
+        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(7, 7));
+
+        board.castle_rights = BoardCastleRights::none();
+
+        return board;
+    }
+
     fn piece_at(&self, square: Square) -> Option<Piece> {
         for (piece, square2) in self.piece_list.iter() {
             if square == *square2 {
@@ -401,7 +478,6 @@ impl Board {
             piece_on_board.0.kind = promotion;
         }
         piece_on_board.1 = m.to;
-
     }
 
     fn apply_move(&mut self, m: Move) {
@@ -418,7 +494,7 @@ impl Board {
 
         self.apply_move_impl(m);
         self.en_passant = m.en_passant_after;
-        self.castle_rights.set_rights(self.side, &m.castle_rights_after(self.side));
+        self.castle_rights = m.castle_rights_after(self.side);
         self.side = self.side.switch();
     }
 
@@ -434,7 +510,7 @@ impl Board {
         }
 
         let piece_on_board = self.piece_at_mut(m.to);
-        if let Some(promotion) = m.promotion {
+        if m.promotion.is_some() {
             piece_on_board.0.kind = PieceKind::Pawn;
         }
         piece_on_board.1 = m.from;
@@ -451,7 +527,7 @@ impl Board {
 
         self.side = self.side.switch();
         self.en_passant = m.en_passant_before;
-        self.castle_rights.set_rights(self.side, &m.castle_rights_before);
+        self.castle_rights = m.castle_rights_before;
     }
 
     fn is_game_over(&self) -> bool {
@@ -524,26 +600,28 @@ impl DynamicEvaluatorStatistics {
 
 trait DynamicEvaluator {
     fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32;
+    fn get_best_line(&self) -> &Line;
     fn get_statistics(&self) -> DynamicEvaluatorStatistics;
 }
 
 struct MinimaxEvaluator {
-    statistics: DynamicEvaluatorStatistics
+    statistics: DynamicEvaluatorStatistics,
+    best_line: Line
 }
 
 impl MinimaxEvaluator {
     fn create() -> MinimaxEvaluator {
-        MinimaxEvaluator { statistics: DynamicEvaluatorStatistics::create() }
+        MinimaxEvaluator { statistics: DynamicEvaluatorStatistics::create(), best_line: Line::new() }
     }
 
-    fn minimax(&mut self, board: &mut Board, depth: u32, neg: f32) -> f32 {
+    fn minimax(&mut self, board: &mut Board, depth: u32, max_depth: u32, neg: f32) -> f32 {
         self.statistics.node_count += 1;
 
-        if depth == 0 {
+        if depth == max_depth {
             return static_evaluation(&board);
         }
 
-        let mut moves = generate_moves(&board);
+        let moves = generate_moves(&board);
         if moves.is_empty() {
             return static_evaluation(&board);
         }
@@ -552,10 +630,10 @@ impl MinimaxEvaluator {
 
         for m in moves.iter() {
             let mut move_unmove = MoveUnmove::apply_move(board, m);
-            let evaluation = self.minimax(board, depth - 1, neg * -1.0) * neg;
+            let evaluation = self.minimax(board, depth + 1, max_depth, neg * -1.0) * neg;
             move_unmove.revert_move(board);
 
-            if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
+            if best_move_evaluation.is_none() || evaluation > best_move_evaluation.unwrap() {
                 best_move_evaluation = Some(evaluation);
             }
         }
@@ -566,16 +644,22 @@ impl MinimaxEvaluator {
 
 impl DynamicEvaluator for MinimaxEvaluator {
     fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32 {
+        self.best_line.moves.clear();
+
         let neg = match board.side {
             Color::White => 1.0,
             Color::Black => -1.0
         };
 
         let stopwatch = std::time::Instant::now();
-        let evaluation = self.minimax(board, depth, neg) * neg;
+        let evaluation = self.minimax(board, 0, depth, neg);
         self.statistics.duration += stopwatch.elapsed();
 
         return evaluation;
+    }
+
+    fn get_best_line(&self) -> &Line {
+        &self.best_line
     }
 
     fn get_statistics(&self) -> DynamicEvaluatorStatistics {
@@ -584,15 +668,16 @@ impl DynamicEvaluator for MinimaxEvaluator {
 }
 
 struct AlphaBetaEvaluator {
-    statistics: DynamicEvaluatorStatistics
+    statistics: DynamicEvaluatorStatistics,
+    best_line: Line
 }
 
 impl AlphaBetaEvaluator {
     fn create() -> AlphaBetaEvaluator {
-        AlphaBetaEvaluator { statistics: DynamicEvaluatorStatistics::create() }
+        AlphaBetaEvaluator { statistics: DynamicEvaluatorStatistics::create(), best_line: Line::new() }
     }
 
-    fn alpha_beta_min(&mut self, board: &mut Board, mut alpha: f32, mut beta: f32, depth: u32) -> f32 {
+    fn alpha_beta_min(&mut self, board: &mut Board, alpha: f32, mut beta: f32, depth: u32) -> f32 {
         self.statistics.node_count += 1;
         if depth == 0 {
             return static_evaluation(&board);
@@ -626,7 +711,7 @@ impl AlphaBetaEvaluator {
         return best_move_evaluation.unwrap();
     }
 
-    fn alpha_beta_max(&mut self, board: &mut Board, mut alpha: f32, mut beta: f32, depth: u32) -> f32 {
+    fn alpha_beta_max(&mut self, board: &mut Board, mut alpha: f32, beta: f32, depth: u32) -> f32 {
         self.statistics.node_count += 1;
         if depth == 0 {
             return static_evaluation(&board);
@@ -663,6 +748,8 @@ impl AlphaBetaEvaluator {
 
 impl DynamicEvaluator for AlphaBetaEvaluator {
     fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32 {
+        self.best_line.moves.clear();
+
         let stopwatch = std::time::Instant::now();
         let evaluation = match board.side {
             Color::White => self.alpha_beta_max(board, num_traits::float::Float::min_value(), num_traits::float::Float::max_value(), depth),
@@ -671,6 +758,10 @@ impl DynamicEvaluator for AlphaBetaEvaluator {
         self.statistics.duration += stopwatch.elapsed();
 
         return evaluation;
+    }
+
+    fn get_best_line(&self) -> &Line {
+        &self.best_line
     }
 
     fn get_statistics(&self) -> DynamicEvaluatorStatistics {
@@ -809,6 +900,7 @@ fn generate_moves(board: &Board) -> Vec<Move> {
                         moves.push(Move::castle(board, piece.color, Castle::KingSide));
                     }
                 }
+
                 // Generate Queen side castle
                 if board.castle_rights.get_rights(piece.color).test(Castle::QueenSide) {
                     if !board.has_piece_at(Square::at(3, piece.color.back_rank() as i8)) &&
@@ -1483,6 +1575,43 @@ mod tests {
     }
 
     #[test]
+    fn board_apply_and_revert_castle_rights_loss_through_capture() {
+        let mut board = Board::create_empty();
+        board.castle_rights = BoardCastleRights::all();
+        board.piece_list = vec!(
+            PieceKind::Rook.colored(Color::Black).at(0, 7),
+            PieceKind::King.colored(Color::Black).at(4, 7),
+            PieceKind::Rook.colored(Color::Black).at(7, 7),
+            PieceKind::Pawn.colored(Color::White).at(1, 6),
+            PieceKind::Pawn.colored(Color::White).at(6, 6));
+        let original_board = board.clone();
+
+        // Moving the king-side Rook looses queen side castle rights
+        let queen_side_capture = TestMove::from_to_capture(&board, Square::at(1, 6), Square::at(0, 7), PieceKind::Rook.colored(Color::Black).at(0, 7));
+
+        board.apply_move(queen_side_capture);
+        let mut expected_castle_rights = BoardCastleRights::all();
+        expected_castle_rights.black.queen_side = false;
+        assert_eq!(board.castle_rights, expected_castle_rights);
+
+        board.revert_move(queen_side_capture);
+        let mut expected_castle_rights = BoardCastleRights::all();
+        assert_eq!(board.castle_rights, expected_castle_rights);
+
+        // Moving the queen-side Rook looses king side castle rights
+        let queen_side_capture = TestMove::from_to_capture(&board, Square::at(6, 6), Square::at(7, 7), PieceKind::Rook.colored(Color::Black).at(7, 7));
+
+        board.apply_move(queen_side_capture);
+        let mut expected_castle_rights = BoardCastleRights::all();
+        expected_castle_rights.black.king_side = false;
+        assert_eq!(board.castle_rights, expected_castle_rights);
+
+        board.revert_move(queen_side_capture);
+        let mut expected_castle_rights = BoardCastleRights::all();
+        assert_eq!(board.castle_rights, expected_castle_rights);
+    }
+
+    #[test]
     fn board_apply_and_revert_no_castle_rights() {
         // Test that with no castle rights to begin with, reverting a move that would loose castle
         // rights doesn't accidentally grant them.
@@ -1537,7 +1666,7 @@ mod tests {
     #[test]
     fn minimax_basic() {
         let minimax = |board: &mut Board, depth: u32, neg: f32| {
-            MinimaxEvaluator::create().minimax(board, depth, neg)
+            MinimaxEvaluator::create().minimax(board, 0, depth, neg)
         };
 
         // Just a white pawn
@@ -1608,15 +1737,32 @@ mod tests {
             PieceKind::Pawn.colored(Color::Black).at(0, 6), );
         assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
     }
+
+    #[test]
+    fn line_to_string() {
+        let mut board = Board::create_empty();
+        board.piece_list = vec!(
+          PieceKind::Pawn.colored(Color::White).at(0, 1),
+          PieceKind::Pawn.colored(Color::White).at(0, 6)
+        );
+
+        let mut moves = Vec::new();
+        moves.push(TestMove::from_to(&board, Square::at(0, 1), Square::at(0, 3)));
+        moves.push(TestMove::from_to(&board, Square::at(0, 6), Square::at(0, 5)));
+
+        let mut line = Line::from_moves(moves);
+
+        assert_eq!(line.to_string(), "a1-a3 a6-a5");
+    }
 }
 
 fn play(board: &mut Board) {
     let mut num_moves = 0;
 
-    let max_depth = 7;
+    let max_depth = 0;
 
     loop {
-        let mut evaluator = AlphaBetaEvaluator::create();
+        let mut evaluator = MinimaxEvaluator::create();
         let d = evaluator.evaluate(board, max_depth);
         println!("{:?}'s turn, static evaluation is {}, dynamic evaluation is {}", board.side, static_evaluation(&board), d);
         board.print();
@@ -1637,14 +1783,14 @@ fn play(board: &mut Board) {
             Color::Black => -1.0
         };
 
-        let mut evaluator = AlphaBetaEvaluator::create();
+        let mut evaluator = MinimaxEvaluator::create();
 
         for move_ in moves.iter() {
             let mut move_unmove = MoveUnmove::apply_move(board, move_);
             let evaluation = evaluator.evaluate(board, max_depth) * neg;
             move_unmove.revert_move(board);
 
-            //println!("Evaluating {:?} with {}", move_, evaluation * neg);
+            //println!("Evaluating {:?} with {}", move_, evaluation);
             if evaluation > best_move_evaluation {
                 best_move = Some(move_);
                 best_move_evaluation = evaluation;
@@ -1655,6 +1801,7 @@ fn play(board: &mut Board) {
         let best_move = best_move.unwrap();
 
         println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes at {} nodes/s", best_move, best_move_evaluation * neg, evaluator.statistics.node_count, nodes_per_second);
+        println!("Line: {}", evaluator.get_best_line().to_string());
 
         board.apply_move(*best_move);
 
@@ -1669,6 +1816,6 @@ fn play(board: &mut Board) {
 }
 
 fn main() {
-    let mut board = Board::create_populated();
+    let mut board = Board::create_king_rooks();
     play(&mut board);
 }
