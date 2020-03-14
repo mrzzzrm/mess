@@ -1,4 +1,6 @@
+use mess::*;
+
 fn main() {
-    let mut board = mess::pile::Board::create_king_rooks();
-    mess::pile::play(&mut board);
+    let mut board = board::Board::create_king_rooks();
+    play(&mut board);
 }

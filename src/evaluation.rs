@@ -1,4 +1,7 @@
-use super::pile::*;
+use super::core::{Color, ColorCastleRights, PieceKind, Piece};
+use super::{Line, MoveUnmove};
+use super::board::{Board};
+use super::move_generation::{generate_moves};
 
 pub fn static_evaluation(board: &Board) -> f32 {
     let mut evaluation = 0.0;
@@ -271,5 +274,20 @@ mod test {
             PieceKind::Pawn.colored(Color::White).at(1, 5),
             PieceKind::Pawn.colored(Color::Black).at(0, 6), );
         assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
+    }
+
+    #[test]
+    fn static_evaluation_basic() {
+        let mut board = Board::create_empty();
+
+        board.piece_list = vec!(
+            PieceKind::Pawn.colored(Color::White).at(0, 1));
+        assert_eq!(static_evaluation(&board), 1.0);
+
+        board.piece_list = vec!(
+            PieceKind::Pawn.colored(Color::White).at(0, 1),
+            PieceKind::Pawn.colored(Color::Black).at(0, 2),
+            PieceKind::Pawn.colored(Color::Black).at(0, 3));
+        assert_eq!(static_evaluation(&board), -1.0);
     }
 }
