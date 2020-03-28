@@ -86,6 +86,18 @@ impl Color {
             Color::Black => 7
         }
     }
+    pub fn home_rank(&self) -> i8 {
+        match self {
+            Color::White => 1,
+            Color::Black => 6
+        }
+    }
+    pub fn forward(&self) -> i8 {
+        match self {
+            Color::White => 1,
+            Color::Black => -1
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq)]

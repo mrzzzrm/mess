@@ -27,7 +27,8 @@ impl DynamicEvaluatorStatistics {
 }
 
 pub trait DynamicEvaluator {
-    fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32;
+    fn create(max_depth: u32) -> Self where Self: Sized;
+    fn evaluate(&mut self, board: &mut Board) -> f32;
     fn get_best_line(&self) -> &Line;
     fn get_statistics(&self) -> DynamicEvaluatorStatistics;
 }
@@ -35,43 +36,48 @@ pub trait DynamicEvaluator {
 pub struct MinimaxEvaluator {
     statistics: DynamicEvaluatorStatistics,
     best_line: Line,
+    max_depth: u32,
 }
 
 impl MinimaxEvaluator {
-    pub fn create() -> MinimaxEvaluator {
-        MinimaxEvaluator { statistics: DynamicEvaluatorStatistics::create(), best_line: Line::new() }
-    }
-
-    pub fn minimax(&mut self, board: &mut Board, depth: u32, max_depth: u32, neg: f32) -> f32 {
+    pub fn minimax(&mut self, board: &mut Board, depth: u32, neg: f32) -> (f32, Line) {
         self.statistics.node_count += 1;
 
-        if depth == max_depth {
-            return static_evaluation(&board);
+        if depth == self.max_depth {
+            return (static_evaluation(&board), Line::empty());
         }
 
         let moves = generate_moves(&board);
         if moves.is_empty() {
-            return static_evaluation(&board);
+            return (static_evaluation(&board), Line::empty());
         }
 
+        let mut best_line = None;
         let mut best_move_evaluation = None;
 
         for m in moves.iter() {
             let mut move_unmove = MoveUnmove::apply_move(board, m);
-            let evaluation = self.minimax(board, depth + 1, max_depth, neg * -1.0) * neg;
+            let (mut evaluation, line) = self.minimax(board, depth + 1, neg * -1.0);
+            evaluation *= neg;
             move_unmove.revert_move(board);
 
             if best_move_evaluation.is_none() || evaluation > best_move_evaluation.unwrap() {
                 best_move_evaluation = Some(evaluation);
+                best_line = Some(line);
+                best_line.as_mut().and_then(|line| {line.push_front(m); return Some(line);} );
             }
         }
 
-        return best_move_evaluation.unwrap() * neg;
+        return (best_move_evaluation.unwrap() * neg, best_line.unwrap());
     }
 }
 
 impl DynamicEvaluator for MinimaxEvaluator {
-    fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32 {
+    fn create(max_depth: u32) -> MinimaxEvaluator {
+        MinimaxEvaluator { statistics: DynamicEvaluatorStatistics::create(), best_line: Line::empty(), max_depth }
+    }
+
+    fn evaluate(&mut self, board: &mut Board) -> f32 {
         self.best_line.moves.clear();
 
         let neg = match board.side {
@@ -80,7 +86,8 @@ impl DynamicEvaluator for MinimaxEvaluator {
         };
 
         let stopwatch = std::time::Instant::now();
-        let evaluation = self.minimax(board, 0, depth, neg);
+        let (evaluation, line) = self.minimax(board, 0, neg);
+        self.best_line = line;
         self.statistics.duration += stopwatch.elapsed();
 
         return evaluation;
@@ -98,16 +105,13 @@ impl DynamicEvaluator for MinimaxEvaluator {
 pub struct AlphaBetaEvaluator {
     statistics: DynamicEvaluatorStatistics,
     best_line: Line,
+    max_depth: u32,
 }
 
 impl AlphaBetaEvaluator {
-    fn create() -> AlphaBetaEvaluator {
-        AlphaBetaEvaluator { statistics: DynamicEvaluatorStatistics::create(), best_line: Line::new() }
-    }
-
     fn alpha_beta_min(&mut self, board: &mut Board, alpha: f32, mut beta: f32, depth: u32) -> f32 {
         self.statistics.node_count += 1;
-        if depth == 0 {
+        if depth == self.max_depth {
             return static_evaluation(&board);
         }
 
@@ -120,7 +124,7 @@ impl AlphaBetaEvaluator {
 
         for m in moves.iter() {
             let mut move_unmove = MoveUnmove::apply_move(board, m);
-            let evaluation = self.alpha_beta_max(board, alpha, beta, depth - 1);
+            let evaluation = self.alpha_beta_max(board, alpha, beta, depth + 1);
             move_unmove.revert_move(board);
 
             if evaluation <= alpha {
@@ -131,7 +135,7 @@ impl AlphaBetaEvaluator {
                 beta = evaluation;
             }
 
-            if best_move_evaluation == None || evaluation > best_move_evaluation.unwrap() {
+            if best_move_evaluation == None || evaluation < best_move_evaluation.unwrap() {
                 best_move_evaluation = Some(evaluation);
             }
         }
@@ -141,7 +145,7 @@ impl AlphaBetaEvaluator {
 
     fn alpha_beta_max(&mut self, board: &mut Board, mut alpha: f32, beta: f32, depth: u32) -> f32 {
         self.statistics.node_count += 1;
-        if depth == 0 {
+        if depth == self.max_depth {
             return static_evaluation(&board);
         }
 
@@ -154,7 +158,7 @@ impl AlphaBetaEvaluator {
 
         for m in moves.iter() {
             let mut move_unmove = MoveUnmove::apply_move(board, m);
-            let evaluation = self.alpha_beta_min(board, alpha, beta, depth - 1);
+            let evaluation = self.alpha_beta_min(board, alpha, beta, depth + 1);
             move_unmove.revert_move(board);
 
             if evaluation >= beta {
@@ -175,13 +179,17 @@ impl AlphaBetaEvaluator {
 }
 
 impl DynamicEvaluator for AlphaBetaEvaluator {
-    fn evaluate(&mut self, board: &mut Board, depth: u32) -> f32 {
+    fn create(max_depth: u32) -> AlphaBetaEvaluator {
+        AlphaBetaEvaluator { statistics: DynamicEvaluatorStatistics::create(), best_line: Line::empty(), max_depth }
+    }
+
+    fn evaluate(&mut self, board: &mut Board) -> f32 {
         self.best_line.moves.clear();
 
         let stopwatch = std::time::Instant::now();
         let evaluation = match board.side {
-            Color::White => self.alpha_beta_max(board, num_traits::float::Float::min_value(), num_traits::float::Float::max_value(), depth),
-            Color::Black => self.alpha_beta_min(board, num_traits::float::Float::min_value(), num_traits::float::Float::max_value(), depth)
+            Color::White => self.alpha_beta_max(board, num_traits::float::Float::min_value(), num_traits::float::Float::max_value(), 0),
+            Color::Black => self.alpha_beta_min(board, num_traits::float::Float::min_value(), num_traits::float::Float::max_value(), 0)
         };
         self.statistics.duration += stopwatch.elapsed();
 
@@ -201,31 +209,29 @@ impl DynamicEvaluator for AlphaBetaEvaluator {
 mod test {
     use super::*;
 
-    #[test]
-    fn minimax_basic() {
-        let minimax = |board: &mut Board, depth: u32, neg: f32| {
-            MinimaxEvaluator::create().minimax(board, 0, depth, neg)
-        };
-
+    fn dynamic_evaluator_basic<DynamicEvaluatorT: DynamicEvaluator>() {
         // Just a white pawn
         let mut board = Board::create_empty();
+        let mut evaluator = DynamicEvaluatorT::create(3);
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1));
-        assert_eq!(minimax(&mut board, 3, 1.0), 1.0);
+        assert_eq!(evaluator.evaluate(&mut board), 1.0);
 
         // Just a black pawn
         let mut board = Board::create_empty();
         board.side = Color::Black;
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::Black).at(0, 6));
-        assert_eq!(minimax(&mut board, 3, -1.0), -1.0);
+        let mut evaluator = DynamicEvaluatorT::create(3);
+        assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // A white pawn that can capture a black pawn
         let mut board = Board::create_empty();
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2));
-        assert_eq!(minimax(&mut board, 3, 1.0), 1.0);
+        let mut evaluator = DynamicEvaluatorT::create(3);
+        assert_eq!(evaluator.evaluate(&mut board), 1.0);
 
         // A black pawn that can capture a white pawn
         let mut board = Board::create_empty();
@@ -233,7 +239,8 @@ mod test {
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 2),
             PieceKind::Pawn.colored(Color::Black).at(1, 3));
-        assert_eq!(minimax(&mut board, 3, -1.0), -1.0);
+        let mut evaluator = DynamicEvaluatorT::create(3);
+        assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // A white pawn that can capture a black pawn and another black pawn
         let mut board = Board::create_empty();
@@ -241,14 +248,16 @@ mod test {
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2),
             PieceKind::Pawn.colored(Color::Black).at(3, 2));
-        assert_eq!(minimax(&mut board, 3, 1.0), 0.0);
+        let mut evaluator = DynamicEvaluatorT::create(3);
+        assert_eq!(evaluator.evaluate(&mut board), 0.0);
 
-        // A white pawn that will be capture by a black pawn after it moves
+        // A white pawn that will be captured by a black pawn after it moves
         let mut board = Board::create_empty();
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 4),
             PieceKind::Pawn.colored(Color::Black).at(1, 6));
-        assert_eq!(minimax(&mut board, 3, 1.0), -1.0);
+        let mut evaluator = DynamicEvaluatorT::create(3);
+        assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // A white pawn that will capture a black pawn after the black pawn moves
         let mut board = Board::create_empty();
@@ -256,7 +265,8 @@ mod test {
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 3),
             PieceKind::Pawn.colored(Color::Black).at(1, 5));
-        assert_eq!(minimax(&mut board, 3, -1.0), 1.0);
+        let mut evaluator = DynamicEvaluatorT::create(3);
+        assert_eq!(evaluator.evaluate(&mut board), 1.0);
 
         // A white pawn that will be captured by a black pawn after a couple of moves
         let mut board = Board::create_empty();
@@ -264,7 +274,8 @@ mod test {
         board.piece_list = vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 2),
             PieceKind::Pawn.colored(Color::Black).at(1, 5), );
-        assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
+        let mut evaluator = DynamicEvaluatorT::create(10);
+        assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // ...
         let mut board = Board::create_empty();
@@ -273,7 +284,18 @@ mod test {
             PieceKind::Pawn.colored(Color::White).at(0, 3),
             PieceKind::Pawn.colored(Color::White).at(1, 5),
             PieceKind::Pawn.colored(Color::Black).at(0, 6), );
-        assert_eq!(minimax(&mut board, 10, -1.0), -1.0);
+        let mut evaluator = DynamicEvaluatorT::create(10);
+        assert_eq!(evaluator.evaluate(&mut board), -1.0);
+    }
+
+    #[test]
+    fn minimax_basic() {
+        dynamic_evaluator_basic::<MinimaxEvaluator>();
+    }
+
+    #[test]
+    fn alpha_beta_basic() {
+        dynamic_evaluator_basic::<AlphaBetaEvaluator>();
     }
 
     #[test]

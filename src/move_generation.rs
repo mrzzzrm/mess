@@ -2,6 +2,12 @@ use super::core::*;
 use super::board::*;
 use super::move_::*;
 
+type Direction = (i8, i8);
+
+const STRAIGHT_DIRECTIONS : [Direction; 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+const DIAGONAL_DIRECTIONS : [Direction; 4] = [(1, 1), (-1, 1), (-1, -1), (1, -1)];
+const KNIGHT_DIRECTIONS : [Direction; 8] = [(-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1)];
+
 // Add a move by x_delta, y_delta to the moves if the target square is on board and is unoccupied
 // or can be captured. Return whether the target square was unoccupied.
 fn probe_move(board: &Board, piece: &Piece, current_square: &Square, x_delta: i8, y_delta: i8, moves: &mut Vec<Move>) -> bool {
@@ -68,15 +74,8 @@ pub fn generate_moves(board: &Board) -> Vec<Move> {
 
         match piece.kind {
             PieceKind::Pawn => {
-                let forward = match piece.color {
-                    Color::White => 1,
-                    Color::Black => -1
-                };
-
-                let home_rank = match piece.color {
-                    Color::White => 1,
-                    Color::Black => 6
-                };
+                let forward = piece.color.forward();
+                let home_rank = piece.color.home_rank();
 
                 if !board.has_piece_at(square.delta(0, forward)) && square.delta(0, forward).is_on_board() {
                     generate_pawn_move(board, piece, square, &square.delta(0, forward), &None, &mut moves);
@@ -104,20 +103,20 @@ pub fn generate_moves(board: &Board) -> Vec<Move> {
                 }
             }
             PieceKind::Rook => {
-                for (x_delta, y_delta) in [(1, 0), (-1, 0), (0, 1), (0, -1)].iter() {
+                for (x_delta, y_delta) in STRAIGHT_DIRECTIONS.iter() {
                     generate_directional_moves(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
             }
             PieceKind::Bishop => {
-                for (x_delta, y_delta) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].iter() {
+                for (x_delta, y_delta) in DIAGONAL_DIRECTIONS.iter() {
                     generate_directional_moves(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
             }
             PieceKind::Queen => {
-                for (x_delta, y_delta) in [(1, 0), (-1, 0), (0, 1), (0, -1)].iter() {
+                for (x_delta, y_delta) in STRAIGHT_DIRECTIONS.iter() {
                     generate_directional_moves(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
-                for (x_delta, y_delta) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].iter() {
+                for (x_delta, y_delta) in DIAGONAL_DIRECTIONS.iter() {
                     generate_directional_moves(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
             }
@@ -144,7 +143,7 @@ pub fn generate_moves(board: &Board) -> Vec<Move> {
                 }
             }
             PieceKind::Knight => {
-                for (x_delta, y_delta) in [(-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2), (-2, 1)].iter() {
+                for (x_delta, y_delta) in KNIGHT_DIRECTIONS.iter() {
                     probe_move(board, piece, square, *x_delta as i8, *y_delta as i8, &mut moves);
                 }
             }
@@ -153,6 +152,62 @@ pub fn generate_moves(board: &Board) -> Vec<Move> {
     }
 
     return moves;
+}
+
+pub fn probe_direction(board: &Board, from: &Square, direction: &Direction) -> Option<Piece> {
+    let mut square = from.delta(direction.0, direction.1);
+    while square.is_on_board() {
+        if let Some(piece) = board.piece_at(square) {
+            return Some(piece);
+        }
+        square = square.delta(direction.0, direction.1);
+    }
+    None
+}
+
+pub fn is_check(board: &Board, color: Color) -> bool {
+    let square = board.king_square(color);
+    if square.is_none() {
+        return false;
+    }
+
+    let square = square.unwrap();
+
+    for direction in STRAIGHT_DIRECTIONS.iter() {
+        if let Some(piece) = probe_direction(board, &square, direction) {
+            if piece == PieceKind::Rook.colored(color.switch()) ||
+                piece == PieceKind::Queen.colored(color.switch()) {
+                return true;
+            }
+        }
+    }
+
+    for direction in DIAGONAL_DIRECTIONS.iter() {
+        if let Some(piece) = probe_direction(board, &square, direction) {
+            if piece == PieceKind::Bishop.colored(color.switch()) ||
+                piece == PieceKind::Queen.colored(color.switch()) {
+                return true;
+            }
+        }
+    }
+
+    for direction in KNIGHT_DIRECTIONS.iter() {
+        if let Some(piece) = board.piece_at(square.delta(direction.0, direction.1)) {
+            if piece == PieceKind::Knight.colored(color.switch()) {
+                return true;
+            }
+        }
+    }
+
+    for x_delta in [-1 as i8, 1 as i8].iter() {
+        if let Some(piece) = board.piece_at(square.delta(*x_delta, color.forward())) {
+            if piece == PieceKind::Pawn.colored(color.switch()) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 #[cfg(test)]
@@ -496,4 +551,135 @@ mod test {
         );
         assert_eq!(generate_moves(&board), expected_moves);
     }
+
+    #[test]
+    fn is_check_empty_board() {
+        let mut board = Board::create_empty();
+        assert_eq!(is_check(&board, Color::Black), false);
+        assert_eq!(is_check(&board, Color::White), false);
+    }
+
+    #[test]
+    fn is_check_by_rook() {
+        let mut board = Board::create_empty();
+
+        // White rook checks black
+        board.piece_list = vec![
+            PieceKind::King.colored(Color::White).at(3, 3),
+            PieceKind::Rook.colored(Color::White).at(4, 3),
+            PieceKind::King.colored(Color::Black).at(4, 6)
+        ];
+        assert_eq!(is_check(&board, Color::Black), true);
+
+        // White is not in check
+        assert_eq!(is_check(&board, Color::White), false);
+
+        // A white pawn blocks the black rook from checking the king
+        board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(4, 5));
+        assert_eq!(is_check(&board, Color::Black), false);
+    }
+
+    #[test]
+    fn is_check_by_knight() {
+        let mut board = Board::create_empty();
+
+        // White knight checks black
+        board.piece_list = vec![
+            PieceKind::Knight.colored(Color::White).at(2, 5),
+            PieceKind::King.colored(Color::Black).at(4, 6)
+        ];
+        assert_eq!(is_check(&board, Color::Black), true);
+    }
+
+    #[test]
+    fn is_check_by_bishop() {
+        let mut board = Board::create_empty();
+
+        // Black bishop checks white
+        board.piece_list = vec![
+            PieceKind::Bishop.colored(Color::Black).at(2, 4),
+            PieceKind::King.colored(Color::White).at(4, 6)
+        ];
+        assert_eq!(is_check(&board, Color::White), true);
+
+        // A black knight blocks the black bishop from checking
+        board.piece_list.push(PieceKind::Knight.colored(Color::Black).at(3, 5));
+        assert_eq!(is_check(&board, Color::White), false);
+    }
+
+    #[test]
+    fn is_check_by_queen_horizontally() {
+        let mut board = Board::create_empty();
+
+        // White queen checks black horizontally
+        board.piece_list = vec![
+            PieceKind::Queen.colored(Color::White).at(5, 4),
+            PieceKind::King.colored(Color::Black).at(1, 4)
+        ];
+        assert_eq!(is_check(&board, Color::Black), true);
+
+        // A white knight blocks the white queen from checking
+        board.piece_list.push(PieceKind::Knight.colored(Color::White).at(3, 4));
+        assert_eq!(is_check(&board, Color::Black), false);
+    }
+
+    #[test]
+    fn is_check_by_queen_diagonally() {
+        let mut board = Board::create_empty();
+
+        // White queen checks black horizontally
+        board.piece_list = vec![
+            PieceKind::Queen.colored(Color::White).at(0, 5),
+            PieceKind::King.colored(Color::Black).at(1, 4)
+        ];
+        assert_eq!(is_check(&board, Color::Black), true);
+    }
+
+    #[test]
+    fn is_check_by_pawn() {
+        let mut board = Board::create_empty();
+
+        // White pawn checks black
+        let mut board = Board::create_empty();
+        board.piece_list = vec![
+            PieceKind::Pawn.colored(Color::White).at(0, 3),
+            PieceKind::King.colored(Color::Black).at(1, 4)
+        ];
+        assert_eq!(is_check(&board, Color::Black), true);
+
+        // White pawn horizontally in front of black king does not check
+        let mut board = Board::create_empty();
+        board.piece_list = vec![
+            PieceKind::Pawn.colored(Color::White).at(1, 3),
+            PieceKind::King.colored(Color::Black).at(1, 4)
+        ];
+        assert_eq!(is_check(&board, Color::Black), false);
+
+        // White pawn has passed the black king and therefore does not check
+        let mut board = Board::create_empty();
+        board.piece_list = vec![
+            PieceKind::Pawn.colored(Color::White).at(0, 5),
+            PieceKind::King.colored(Color::Black).at(1, 4)
+        ];
+        assert_eq!(is_check(&board, Color::Black), false);
+
+        // Black pawn checks white
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec![
+            PieceKind::Pawn.colored(Color::Black).at(0, 5),
+            PieceKind::King.colored(Color::White).at(1, 4)
+        ];
+        assert_eq!(is_check(&board, Color::White), true);
+
+        // Black pawn has passed the white king and therefore does not check
+        let mut board = Board::create_empty();
+        board.side = Color::Black;
+        board.piece_list = vec![
+            PieceKind::Pawn.colored(Color::Black).at(0, 3),
+            PieceKind::King.colored(Color::White).at(1, 4)
+        ];
+        assert_eq!(is_check(&board, Color::White), false);
+    }
 }
+

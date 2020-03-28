@@ -162,6 +162,15 @@ impl Board {
         generate_moves(self).is_empty()
     }
 
+    pub fn king_square(&self, color: Color) -> Option<Square> {
+        for (piece, square) in self.piece_list.iter() {
+            if piece.kind == PieceKind::King && piece.color == color {
+                return Some(*square);
+            }
+        }
+        None
+    }
+
     pub fn print(&self) {
         print!("  ", );
         for file in 0..8 {

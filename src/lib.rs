@@ -18,7 +18,7 @@ pub struct Line {
 }
 
 impl Line {
-    pub fn new() -> Line {
+    pub fn empty() -> Line {
         Line{moves: Vec::new()}
     }
 
@@ -28,6 +28,10 @@ impl Line {
 
     pub fn to_string(&self) -> String {
         self.moves.iter().map(|m| m.long_algebraic()).collect::<Vec<String>>().join(" ")
+    }
+
+    pub fn push_front(&mut self, move_: &Move) {
+        self.moves.insert(0, *move_);
     }
 }
 
@@ -55,59 +59,62 @@ impl MoveUnmove {
     }
 }
 
-pub fn play(board: &mut Board) {
-    let mut num_moves = 0;
+pub fn best_move(board: &mut Board, evaluator: &mut dyn DynamicEvaluator) -> Option<Move> {
+    if board.is_game_over() {
+        return None;
+    }
 
+    let mut moves = generate_moves(board);
+    println!("{} moves to choose from", moves.len());
+
+    let mut best_move = Option::None;
+    let mut best_move_evaluation = Float::min_value();
+
+    let neg = match board.side {
+        Color::White => 1.0,
+        Color::Black => -1.0
+    };
+
+    for move_ in moves.iter() {
+        let mut move_unmove = MoveUnmove::apply_move(board, move_);
+        let evaluation = evaluator.evaluate(board) * neg;
+        move_unmove.revert_move(board);
+
+        //println!("Evaluating {:?} with {}", move_, evaluation);
+        if evaluation > best_move_evaluation {
+            best_move = Some(*move_);
+            best_move_evaluation = evaluation;
+        }
+    }
+
+    let nodes_per_second = evaluator.get_statistics().node_count as f32 / evaluator.get_statistics().duration.as_secs_f32();
+
+    println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes at {} nodes/s", best_move, best_move_evaluation * neg, evaluator.get_statistics().node_count, nodes_per_second);
+    println!("Line: {}", evaluator.get_best_line().to_string());
+
+    return best_move;
+}
+
+pub fn play(board: &mut Board) {
     let max_depth = 0;
 
     loop {
-        let mut evaluator = MinimaxEvaluator::create();
-        let d = evaluator.evaluate(board, max_depth);
+        let mut evaluator = MinimaxEvaluator::create(max_depth);
+        let d = evaluator.evaluate(board);
         println!("{:?}'s turn, static evaluation is {}, dynamic evaluation is {}", board.side, static_evaluation(&board), d);
         board.print();
 
-        if board.is_game_over() {
-            println!("Game is over");
-            break;
-        }
+        let mut evaluator = AlphaBetaEvaluator::create(max_depth);
+        let best_move = best_move(board, &mut evaluator);
 
-        let mut moves = generate_moves(board);
-        println!("{} moves to choose from", moves.len());
-
-        let mut best_move = Option::None;
-        let mut best_move_evaluation = Float::min_value();
-
-        let neg = match board.side {
-            Color::White => 1.0,
-            Color::Black => -1.0
-        };
-
-        let mut evaluator = MinimaxEvaluator::create();
-
-        for move_ in moves.iter() {
-            let mut move_unmove = MoveUnmove::apply_move(board, move_);
-            let evaluation = evaluator.evaluate(board, max_depth) * neg;
-            move_unmove.revert_move(board);
-
-            //println!("Evaluating {:?} with {}", move_, evaluation);
-            if evaluation > best_move_evaluation {
-                best_move = Some(move_);
-                best_move_evaluation = evaluation;
+        match best_move {
+            Some(best_move) => {
+                board.apply_move(best_move);
+            },
+            None => {
+                println!("Game is over");
+                return;
             }
-        }
-
-        let nodes_per_second = evaluator.get_statistics().node_count as f32 / evaluator.get_statistics().duration.as_secs_f32();
-        let best_move = best_move.unwrap();
-
-        println!("Chose move {:?} with an evaluation of {}, evaluated {} nodes at {} nodes/s", best_move, best_move_evaluation * neg, evaluator.get_statistics().node_count, nodes_per_second);
-        println!("Line: {}", evaluator.get_best_line().to_string());
-
-        board.apply_move(*best_move);
-
-        num_moves += 1;
-        if num_moves > 50 {
-            println!("Too many moves, aborting game");
-            break;
         }
 
         println!();
