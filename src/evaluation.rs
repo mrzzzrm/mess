@@ -47,7 +47,7 @@ impl MinimaxEvaluator {
             return (static_evaluation(&board), Line::empty());
         }
 
-        let moves = generate_moves(&board);
+        let moves = generate_moves(board);
         if moves.is_empty() {
             return (static_evaluation(&board), Line::empty());
         }
@@ -115,7 +115,7 @@ impl AlphaBetaEvaluator {
             return static_evaluation(&board);
         }
 
-        let mut moves = generate_moves(&board);
+        let mut moves = generate_moves(board);
         if moves.is_empty() {
             return static_evaluation(&board);
         }
@@ -149,7 +149,7 @@ impl AlphaBetaEvaluator {
             return static_evaluation(&board);
         }
 
-        let mut moves = generate_moves(&board);
+        let mut moves = generate_moves(board);
         if moves.is_empty() {
             return static_evaluation(&board);
         }
@@ -213,77 +213,77 @@ mod test {
         // Just a white pawn
         let mut board = Board::create_empty();
         let mut evaluator = DynamicEvaluatorT::create(3);
-        board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(0, 1));
+        board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(0, 1)));
         assert_eq!(evaluator.evaluate(&mut board), 1.0);
 
         // Just a black pawn
         let mut board = Board::create_empty();
         board.side = Color::Black;
-        board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::Black).at(0, 6));
+        board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::Black).at(0, 6)));
         let mut evaluator = DynamicEvaluatorT::create(3);
         assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // A white pawn that can capture a black pawn
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
-            PieceKind::Pawn.colored(Color::Black).at(1, 2));
+            PieceKind::Pawn.colored(Color::Black).at(1, 2)));
         let mut evaluator = DynamicEvaluatorT::create(3);
         assert_eq!(evaluator.evaluate(&mut board), 1.0);
 
         // A black pawn that can capture a white pawn
         let mut board = Board::create_empty();
         board.side = Color::Black;
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 2),
-            PieceKind::Pawn.colored(Color::Black).at(1, 3));
+            PieceKind::Pawn.colored(Color::Black).at(1, 3)));
         let mut evaluator = DynamicEvaluatorT::create(3);
         assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // A white pawn that can capture a black pawn and another black pawn
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(1, 2),
-            PieceKind::Pawn.colored(Color::Black).at(3, 2));
+            PieceKind::Pawn.colored(Color::Black).at(3, 2)));
         let mut evaluator = DynamicEvaluatorT::create(3);
         assert_eq!(evaluator.evaluate(&mut board), 0.0);
 
         // A white pawn that will be captured by a black pawn after it moves
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 4),
-            PieceKind::Pawn.colored(Color::Black).at(1, 6));
+            PieceKind::Pawn.colored(Color::Black).at(1, 6)));
         let mut evaluator = DynamicEvaluatorT::create(3);
         assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // A white pawn that will capture a black pawn after the black pawn moves
         let mut board = Board::create_empty();
         board.side = Color::Black;
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 3),
-            PieceKind::Pawn.colored(Color::Black).at(1, 5));
+            PieceKind::Pawn.colored(Color::Black).at(1, 5)));
         let mut evaluator = DynamicEvaluatorT::create(3);
         assert_eq!(evaluator.evaluate(&mut board), 1.0);
 
         // A white pawn that will be captured by a black pawn after a couple of moves
         let mut board = Board::create_empty();
         board.side = Color::Black;
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 2),
-            PieceKind::Pawn.colored(Color::Black).at(1, 5), );
+            PieceKind::Pawn.colored(Color::Black).at(1, 5), ));
         let mut evaluator = DynamicEvaluatorT::create(10);
         assert_eq!(evaluator.evaluate(&mut board), -1.0);
 
         // ...
         let mut board = Board::create_empty();
         board.side = Color::Black;
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 3),
             PieceKind::Pawn.colored(Color::White).at(1, 5),
-            PieceKind::Pawn.colored(Color::Black).at(0, 6), );
+            PieceKind::Pawn.colored(Color::Black).at(0, 6), ));
         let mut evaluator = DynamicEvaluatorT::create(10);
         assert_eq!(evaluator.evaluate(&mut board), -1.0);
     }
@@ -302,14 +302,14 @@ mod test {
     fn static_evaluation_basic() {
         let mut board = Board::create_empty();
 
-        board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(0, 1));
+        board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(0, 1)));
         assert_eq!(static_evaluation(&board), 1.0);
 
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::Black).at(0, 2),
-            PieceKind::Pawn.colored(Color::Black).at(0, 3));
+            PieceKind::Pawn.colored(Color::Black).at(0, 3)));
         assert_eq!(static_evaluation(&board), -1.0);
     }
 }

@@ -36,7 +36,7 @@ fn bench_minimax(b: &mut bencher::Bencher) {
 }
 
 fn bench_alphabeta(b: &mut bencher::Bencher) {
-    let mut board = Board::create_populated();gggdaHallo wie geht es euch allen?
+    let mut board = Board::create_populated();
 
     b.iter(|| {
         let mut evaluator = AlphaBetaEvaluator::create(4 );

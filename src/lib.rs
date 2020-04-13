@@ -129,10 +129,10 @@ mod test {
     #[test]
     fn line_to_string() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
             PieceKind::Pawn.colored(Color::White).at(0, 6)
-        );
+        ));
 
         let mut moves = Vec::new();
         moves.push(TestMove::from_to(&board, Square::at(0, 1), Square::at(0, 3)));

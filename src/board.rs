@@ -2,9 +2,45 @@ use super::core::*;
 use super::move_::*;
 use super::move_generation::*;
 
+#[derive(Copy, Clone, Debug)]
+pub struct PieceOnBoard {
+    piece: Piece,
+    square: Square,
+}
+
+impl PieceOnBoard {
+    pub fn create(piece: &Piece, square: &Square) -> PieceOnBoard {
+        PieceOnBoard {
+            piece: *piece,
+            square: *square,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
+struct PieceListEntry {
+    piece: Piece,
+    square: Square,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct SquareListEntry {
+    index: u8
+}
+
+impl SquareListEntry {
+    fn create(index: u8) -> SquareListEntry {
+        SquareListEntry {
+            index
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Board {
-    pub piece_list: Vec<PieceOnBoard>,
+    piece_list: Vec<Option<PieceListEntry>>,
+    piece_free_list: Vec<u8>,
+    square_list: Vec<Option<SquareListEntry>>,
     pub side: Color,
     pub en_passant: Option<Square>,
     pub castle_rights: BoardCastleRights,
@@ -12,86 +48,97 @@ pub struct Board {
 
 impl Board {
     pub fn create_empty() -> Board {
-        Board {
+        let mut board = Board {
             piece_list: Vec::new(),
+            piece_free_list: Vec::with_capacity(32),
+            square_list: Vec::new(),
             side: Color::White,
             en_passant: None,
             castle_rights: BoardCastleRights::none(),
+        };
+
+        board.piece_list = vec![None; 32];
+        board.square_list = vec![None; 64];
+
+        for idx in 0..board.piece_list.len() {
+            board.piece_free_list.push(idx as u8);
         }
+
+        return board;
     }
 
     pub fn create_populated() -> Board {
         let mut board = Board::create_empty();
+
+        let mut pieces = Vec::with_capacity(32);
+
         for x in 0..8 {
-            board.piece_list.push(PieceKind::Pawn.colored(Color::White).at(x, 1));
-            board.piece_list.push(PieceKind::Pawn.colored(Color::Black).at(x, 6));
+            pieces.push(PieceKind::Pawn.colored(Color::White).at(x, 1));
+            pieces.push(PieceKind::Pawn.colored(Color::Black).at(x, 6));
         }
-        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(0, 0));
-        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(7, 0));
-        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(0, 7));
-        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(7, 7));
-        board.piece_list.push(PieceKind::Knight.colored(Color::White).at(1, 0));
-        board.piece_list.push(PieceKind::Knight.colored(Color::White).at(6, 0));
-        board.piece_list.push(PieceKind::Knight.colored(Color::Black).at(1, 7));
-        board.piece_list.push(PieceKind::Knight.colored(Color::Black).at(6, 7));
-        board.piece_list.push(PieceKind::Bishop.colored(Color::White).at(2, 0));
-        board.piece_list.push(PieceKind::Bishop.colored(Color::White).at(5, 0));
-        board.piece_list.push(PieceKind::Bishop.colored(Color::Black).at(2, 7));
-        board.piece_list.push(PieceKind::Bishop.colored(Color::Black).at(5, 7));
-        board.piece_list.push(PieceKind::Queen.colored(Color::White).at(3, 0));
-        board.piece_list.push(PieceKind::King.colored(Color::White).at(4, 0));
-        board.piece_list.push(PieceKind::Queen.colored(Color::Black).at(3, 7));
-        board.piece_list.push(PieceKind::King.colored(Color::Black).at(4, 7));
+        pieces.push(PieceKind::Rook.colored(Color::White).at(0, 0));
+        pieces.push(PieceKind::Rook.colored(Color::White).at(7, 0));
+        pieces.push(PieceKind::Rook.colored(Color::Black).at(0, 7));
+        pieces.push(PieceKind::Rook.colored(Color::Black).at(7, 7));
+        pieces.push(PieceKind::Knight.colored(Color::White).at(1, 0));
+        pieces.push(PieceKind::Knight.colored(Color::White).at(6, 0));
+        pieces.push(PieceKind::Knight.colored(Color::Black).at(1, 7));
+        pieces.push(PieceKind::Knight.colored(Color::Black).at(6, 7));
+        pieces.push(PieceKind::Bishop.colored(Color::White).at(2, 0));
+        pieces.push(PieceKind::Bishop.colored(Color::White).at(5, 0));
+        pieces.push(PieceKind::Bishop.colored(Color::Black).at(2, 7));
+        pieces.push(PieceKind::Bishop.colored(Color::Black).at(5, 7));
+        pieces.push(PieceKind::Queen.colored(Color::White).at(3, 0));
+        pieces.push(PieceKind::King.colored(Color::White).at(4, 0));
+        pieces.push(PieceKind::Queen.colored(Color::Black).at(3, 7));
+        pieces.push(PieceKind::King.colored(Color::Black).at(4, 7));
+
+        board.add_pieces(&pieces);
 
         board.castle_rights = BoardCastleRights::all();
 
         return board;
     }
 
-    pub fn create_king_rooks() -> Board {
-        let mut board = Board::create_empty();
-        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(0, 0));
-        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(7, 0));
-        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(0, 7));
-        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(7, 7));
-        board.piece_list.push(PieceKind::King.colored(Color::White).at(4, 0));
-        board.piece_list.push(PieceKind::King.colored(Color::Black).at(4, 7));
+    pub fn add_piece(&mut self, piece: &PieceOnBoard) {
+        assert!(!self.piece_free_list.is_empty());
 
-        board.castle_rights = BoardCastleRights::all();
+        let piece_list_index = self.piece_free_list.pop().unwrap() as usize;
 
-        return board;
+        // Add piece to piece list
+        self.piece_list[piece_list_index] = Some(PieceListEntry {
+            piece: piece.piece,
+            square: piece.square,
+        });
+
+        // Add piece to square list
+        let square_index = piece.square.index();
+        assert!(self.square_list[square_index].is_none());
+        self.square_list[square_index] = Some(SquareListEntry { index: piece_list_index as u8 });
     }
 
-    pub fn create_rooks() -> Board {
-        let mut board = Board::create_empty();
-        board.piece_list.push(PieceKind::Rook.colored(Color::White).at(7, 0));
-        board.piece_list.push(PieceKind::Rook.colored(Color::Black).at(7, 7));
+    pub fn add_pieces(&mut self, pieces: &Vec<PieceOnBoard>) {
+        for piece in pieces.iter() {
+            self.add_piece(piece);
+        }
+    }
 
-        board.castle_rights = BoardCastleRights::none();
-
-        return board;
+    pub fn remove_piece(&mut self, square: &Square) {
+        let piece_list_index = self.square_list[square.index()].unwrap().index as usize;
+        self.square_list[square.index()] = None;
+        self.piece_list[piece_list_index] = None;
+        self.piece_free_list.push(piece_list_index as u8);
     }
 
     pub fn piece_at(&self, square: Square) -> Option<Piece> {
-        for (piece, square2) in self.piece_list.iter() {
-            if square == *square2 {
-                return Some(*piece);
-            }
+        if let Some(entry) = self.square_list[square.index()] {
+            return Some(self.piece_list[entry.index as usize].unwrap().piece);
         }
         return None;
     }
 
-    pub fn piece_at_mut(&mut self, square: Square) -> &mut PieceOnBoard {
-        for piece_on_board in self.piece_list.iter_mut() {
-            if square == piece_on_board.1 {
-                return piece_on_board;
-            }
-        }
-        panic!("No piece found on {:?}", square);
-    }
-
     pub fn has_piece_at(&self, square: Square) -> bool {
-        self.piece_list.iter().position(|(_, square2)| square == *square2).is_some()
+        return self.square_list[square.index()].is_some();
     }
 
     fn apply_move_impl(&mut self, m: Move) {
@@ -101,11 +148,22 @@ impl Board {
             self.apply_move_impl(Move::rook_castle(self, castle, m.from.rank()));
         }
 
-        let piece_on_board = self.piece_at_mut(m.from);
+        let from_square_index = m.from.index();
+        let to_square_index = m.to.index();
+
+        let piece_list_index = self.square_list[from_square_index].unwrap().index as usize;
+        self.square_list[from_square_index] = None;
+
         if let Some(promotion) = m.promotion {
-            piece_on_board.0.kind = promotion;
+            // Promotion is realised by removing the old piece and adding the promoted piece as a
+            // new piece.
+            self.remove_piece(&m.from);
+            self.add_piece(&promotion.colored(self.side).at_square(&m.to));
+        } else {
+            // Normal from-to moves are realised by adjusting the piece and square lists.
+            self.piece_list[piece_list_index].unwrap().square = m.to;
+            self.square_list[to_square_index] = Some(SquareListEntry::create(piece_list_index as u8));
         }
-        piece_on_board.1 = m.to;
     }
 
     pub fn apply_move(&mut self, m: Move) {
@@ -113,14 +171,13 @@ impl Board {
 
         // Capture the piece on the target square, if any
         if let Some(capture) = m.capture {
-            let pos = self.piece_list.iter().position(|&x| x.1 == capture.1).unwrap();
-            assert_eq!(capture, self.piece_list[pos]);
-            self.piece_list.remove(pos);
+            self.remove_piece(&capture.square);
         } else {
             assert!(!self.has_piece_at(m.to));
         }
 
         self.apply_move_impl(m);
+
         self.en_passant = m.en_passant_after;
         self.castle_rights = m.castle_rights_after(self.side);
         self.side = self.side.switch();
@@ -137,11 +194,22 @@ impl Board {
             self.revert_move_impl(Move::rook_castle(self, castle, m.from.rank()));
         }
 
-        let piece_on_board = self.piece_at_mut(m.to);
-        if m.promotion.is_some() {
-            piece_on_board.0.kind = PieceKind::Pawn;
+        let from_square_index = m.from.index();
+        let to_square_index = m.to.index();
+
+        let piece_list_index = self.square_list[to_square_index].unwrap().index as usize;
+        self.square_list[to_square_index] = None;
+
+        if let Some(promotion) = m.promotion {
+            // Promotion is realised by removing the old piece and adding the promoted piece as a
+            // new piece.
+            self.remove_piece(&m.to);
+            self.add_piece(&PieceKind::Pawn.colored(self.side).at_square(&m.from));
+        } else {
+            // Normal from-to moves are realised by adjusting the piece and square lists.
+            self.piece_list[piece_list_index as usize].unwrap().square = m.from;
+            self.square_list[from_square_index] = Some(SquareListEntry::create(piece_list_index as u8));
         }
-        piece_on_board.1 = m.from;
     }
 
     pub fn revert_move(&mut self, m: Move) {
@@ -149,8 +217,7 @@ impl Board {
 
         // Revert capture, if any
         if let Some(capture) = m.capture {
-            assert!(!self.has_piece_at(capture.1));
-            self.piece_list.push(capture);
+            self.add_piece(&capture);
         }
 
         self.side = self.side.switch();
@@ -158,14 +225,16 @@ impl Board {
         self.castle_rights = m.castle_rights_before;
     }
 
-    pub fn is_game_over(&self) -> bool {
+    pub fn is_game_over(&mut self) -> bool {
         generate_moves(self).is_empty()
     }
 
     pub fn king_square(&self, color: Color) -> Option<Square> {
-        for (piece, square) in self.piece_list.iter() {
-            if piece.kind == PieceKind::King && piece.color == color {
-                return Some(*square);
+        for entry in self.piece_list.iter() {
+            if let Some(entry) = entry {
+                if entry.piece.kind == PieceKind::King && entry.piece.color == color {
+                    return Some(entry.square);
+                }
             }
         }
         None
@@ -220,8 +289,8 @@ mod test {
     #[test]
     fn board_apply_and_revert_move() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(0, 1));
+        board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(0, 1)));
         let mut move_ = TestMove::from_to(&board, Square::at(0, 1), Square::at(0, 2));
         let original_board = board.clone();
 
@@ -230,8 +299,8 @@ mod test {
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(0, 2));
+        expected_board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(0, 2)));
         assert_eq!(board, expected_board);
 
         // Revert the move
@@ -242,9 +311,9 @@ mod test {
     #[test]
     fn board_apply_and_revert_move_with_capture() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(0, 1),
-            PieceKind::Pawn.colored(Color::Black).at(1, 2));
+            PieceKind::Pawn.colored(Color::Black).at(1, 2)));
         let original_board = board.clone();
 
         let mut move_ = TestMove::from_to_capture(&board, Square::at(0, 1), Square::at(1, 2), PieceKind::Pawn.colored(Color::Black).at(1, 2));
@@ -255,8 +324,8 @@ mod test {
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(1, 2));
+        expected_board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(1, 2)));
 
         assert_eq!(board, expected_board);
 
@@ -268,8 +337,8 @@ mod test {
     #[test]
     fn board_apply_and_revert_move_with_en_passant_square() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(2, 4));
+        board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(2, 4)));
         board.en_passant = Some(Square::at(4, 2));
 
         let original_board = board.clone();
@@ -282,8 +351,8 @@ mod test {
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
         expected_board.en_passant = None;
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(2, 5));
+        expected_board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(2, 5)));
 
         assert_eq!(board, expected_board);
 
@@ -295,9 +364,9 @@ mod test {
     #[test]
     fn board_apply_and_revert_move_with_en_passant_capture() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::Black).at(1, 4),
-            PieceKind::Pawn.colored(Color::White).at(2, 4));
+            PieceKind::Pawn.colored(Color::White).at(2, 4)));
         let original_board = board.clone();
 
         let mut move_ = TestMove::from_to_capture(&board, Square::at(2, 4), Square::at(1, 5), PieceKind::Pawn.colored(Color::Black).at(1, 4));
@@ -307,8 +376,8 @@ mod test {
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
-        expected_board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(1, 5));
+        expected_board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(1, 5)));
 
         assert_eq!(board, expected_board);
 
@@ -320,8 +389,8 @@ mod test {
     #[test]
     fn board_apply_and_revert_move_with_promotion() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
-            PieceKind::Pawn.colored(Color::White).at(1, 6));
+        board.add_pieces(vec!(
+            PieceKind::Pawn.colored(Color::White).at(1, 6)));
         let original_board = board.clone();
 
         let mut move_ = TestMove::promotion(&board, Square::at(1, 6), Square::at(1, 7), PieceKind::Bishop);
@@ -331,8 +400,8 @@ mod test {
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
-        expected_board.piece_list = vec!(
-            PieceKind::Bishop.colored(Color::White).at(1, 7));
+        expected_board.add_pieces(vec!(
+            PieceKind::Bishop.colored(Color::White).at(1, 7)));
 
         assert_eq!(board, expected_board);
 
@@ -344,9 +413,9 @@ mod test {
     #[test]
     fn board_apply_and_revert_move_with_capture_and_promotion() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Pawn.colored(Color::White).at(1, 6),
-            PieceKind::Pawn.colored(Color::Black).at(2, 7));
+            PieceKind::Pawn.colored(Color::Black).at(2, 7)));
         let original_board = board.clone();
 
         let mut move_ = TestMove::promotion_capture(&board, Square::at(1, 6), Square::at(2, 7), PieceKind::Pawn.colored(Color::Black).at(2, 7), PieceKind::Bishop);
@@ -356,8 +425,8 @@ mod test {
 
         let mut expected_board = Board::create_empty();
         expected_board.side = Color::Black;
-        expected_board.piece_list = vec!(
-            PieceKind::Bishop.colored(Color::White).at(2, 7));
+        expected_board.add_pieces(vec!(
+            PieceKind::Bishop.colored(Color::White).at(2, 7)));
 
         assert_eq!(board, expected_board);
 
@@ -369,10 +438,10 @@ mod test {
     #[test]
     fn board_apply_and_revert_king_side_castling() {
         let mut board = Board::create_empty();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::King.colored(Color::White).at(4, 0),
             PieceKind::Rook.colored(Color::White).at(0, 0),
-            PieceKind::Rook.colored(Color::White).at(7, 0));
+            PieceKind::Rook.colored(Color::White).at(7, 0)));
         board.castle_rights = BoardCastleRights::all();
         let original_board = board.clone();
 
@@ -385,10 +454,10 @@ mod test {
         expected_board.side = Color::Black;
         expected_board.castle_rights.white = ColorCastleRights::none();
         expected_board.castle_rights.black = ColorCastleRights::all();
-        expected_board.piece_list = vec!(
+        expected_board.add_pieces(vec!(
             PieceKind::King.colored(Color::White).at(6, 0),
             PieceKind::Rook.colored(Color::White).at(0, 0),
-            PieceKind::Rook.colored(Color::White).at(5, 0));
+            PieceKind::Rook.colored(Color::White).at(5, 0)));
         assert_eq!(board, expected_board);
 
         // Revert the move
@@ -400,10 +469,10 @@ mod test {
     fn board_apply_and_revert_queen_side_castling() {
         let mut board = Board::create_empty();
         board.side = Color::Black;
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::King.colored(Color::Black).at(4, 7),
             PieceKind::Rook.colored(Color::Black).at(0, 7),
-            PieceKind::Rook.colored(Color::Black).at(7, 7));
+            PieceKind::Rook.colored(Color::Black).at(7, 7)));
         board.castle_rights = BoardCastleRights::all();
         let original_board = board.clone();
 
@@ -415,10 +484,10 @@ mod test {
         let mut expected_board = Board::create_empty();
         expected_board.castle_rights.white = ColorCastleRights::all();
         expected_board.castle_rights.black = ColorCastleRights::none();
-        expected_board.piece_list = vec!(
+        expected_board.add_pieces(vec!(
             PieceKind::King.colored(Color::Black).at(2, 7),
             PieceKind::Rook.colored(Color::Black).at(3, 7),
-            PieceKind::Rook.colored(Color::Black).at(7, 7));
+            PieceKind::Rook.colored(Color::Black).at(7, 7)));
         assert_eq!(board, expected_board);
 
         // Revert the move
@@ -430,10 +499,10 @@ mod test {
     fn board_apply_and_revert_castle_rights_loss_through_normal_move() {
         let mut board = Board::create_empty();
         board.castle_rights = BoardCastleRights::all();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::King.colored(Color::White).at(4, 0),
-            PieceKind::Rook.colored(Color::White).at(7, 0));
+            PieceKind::Rook.colored(Color::White).at(7, 0)));
         let original_board = board.clone();
 
         // Moving the king-side Rook looses queen side castle rights
@@ -477,12 +546,12 @@ mod test {
     fn board_apply_and_revert_castle_rights_loss_through_capture() {
         let mut board = Board::create_empty();
         board.castle_rights = BoardCastleRights::all();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Rook.colored(Color::Black).at(0, 7),
             PieceKind::King.colored(Color::Black).at(4, 7),
             PieceKind::Rook.colored(Color::Black).at(7, 7),
             PieceKind::Pawn.colored(Color::White).at(1, 6),
-            PieceKind::Pawn.colored(Color::White).at(6, 6));
+            PieceKind::Pawn.colored(Color::White).at(6, 6)));
         let original_board = board.clone();
 
         // Moving the king-side Rook looses queen side castle rights
@@ -517,10 +586,10 @@ mod test {
 
         let mut board = Board::create_empty();
         board.castle_rights = BoardCastleRights::none();
-        board.piece_list = vec!(
+        board.add_pieces(vec!(
             PieceKind::Rook.colored(Color::White).at(0, 0),
             PieceKind::King.colored(Color::White).at(4, 0),
-            PieceKind::Rook.colored(Color::White).at(7, 0));
+            PieceKind::Rook.colored(Color::White).at(7, 0)));
 
         // Moving the king-side Rook
         let move_ = TestMove::from_to(&board, Square::at(0, 0), Square::at(0, 1));

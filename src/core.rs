@@ -1,3 +1,5 @@
+use super::board::{PieceOnBoard};
+
 #[derive(Clone, Copy, Ord, Eq, PartialOrd, PartialEq)]
 pub struct Square {
     x: i8,
@@ -23,6 +25,11 @@ impl Square {
 
     pub fn delta(&self, x: i8, y: i8) -> Square {
         Square { x: self.x + x, y: self.y + y }
+    }
+
+    pub fn index(&self) -> usize {
+        assert!(self.is_on_board());
+        (self.y * 8 + self.x) as usize
     }
 
     pub fn algebraic(&self) -> String {
@@ -153,7 +160,11 @@ impl Piece {
     }
 
     pub fn at(&self, file: i8, rank: i8) -> PieceOnBoard {
-        return (*self, Square { x: file, y: rank });
+        return PieceOnBoard::create(self, &Square { x: file, y: rank });
+    }
+
+    pub fn at_square(&self, square: &Square) -> PieceOnBoard {
+        return PieceOnBoard::create(self, square);
     }
 
     pub fn value(&self) -> f32 {
@@ -240,5 +251,3 @@ impl BoardCastleRights {
         }
     }
 }
-
-pub type PieceOnBoard = (Piece, Square);
